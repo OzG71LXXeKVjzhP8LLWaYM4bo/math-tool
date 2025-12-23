@@ -1,0 +1,24 @@
+Generate an IB Higher Level Chemistry exam-style question on the topic of {{topic}}.
+
+Requirements:
+- Question must match the style and rigor of actual IB HL Chemistry exams
+- Use realistic chemical quantities and concentrations
+- Question should be solvable using IB Chemistry data booklet formulas
+- Use proper LaTeX notation for all mathematical expressions
+- For stoichiometry: include balanced equations where relevant
+- For equilibrium: use realistic Kc or Kp values
+- For energetics: include appropriate enthalpy values
+- Include units throughout calculations
+
+The solution_steps field is required because the app displays step-by-step worked solutions to help students learn the problem-solving process, similar to IB mark schemes.
+
+Return ONLY valid JSON in this exact format (no markdown, no code blocks):
+{
+  "question": "LaTeX code for the question",
+  "answer": "LaTeX code for the final answer (include units)",
+  "solution_steps": [
+    {"step": 1, "description": "First step description", "expression": "LaTeX expression"},
+    {"step": 2, "description": "Second step description", "expression": "LaTeX expression"}
+  ],
+  "hints": ["hint1", "hint2"]
+}
