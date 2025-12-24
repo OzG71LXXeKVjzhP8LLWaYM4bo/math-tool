@@ -1,8 +1,8 @@
-pub mod ocr;
 pub mod solve;
 pub mod question;
 pub mod quiz;
 pub mod progress;
+pub mod ocr;
 
 use axum::Json;
 use serde::Serialize;

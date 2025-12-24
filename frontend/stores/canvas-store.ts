@@ -1,19 +1,26 @@
 import { create } from 'zustand';
-import type { Stroke, Point } from '@/types';
 
-interface CanvasStore {
-  // State
+export interface Point {
+  x: number;
+  y: number;
+}
+
+export interface Stroke {
+  points: Point[];
+  color: string;
+  width: number;
+  tool: 'pen' | 'eraser';
+}
+
+interface CanvasState {
   strokes: Stroke[];
   currentStroke: Stroke | null;
   undoStack: Stroke[][];
   redoStack: Stroke[][];
-
-  // Drawing settings
   currentColor: string;
   strokeWidth: number;
-  tool: 'pen' | 'eraser' | 'highlighter';
+  tool: 'pen' | 'eraser';
 
-  // Actions
   startStroke: (point: Point) => void;
   addPoint: (point: Point) => void;
   endStroke: () => void;
@@ -22,14 +29,10 @@ interface CanvasStore {
   clear: () => void;
   setColor: (color: string) => void;
   setStrokeWidth: (width: number) => void;
-  setTool: (tool: 'pen' | 'eraser' | 'highlighter') => void;
-  getCanvasData: () => Stroke[];
+  setTool: (tool: 'pen' | 'eraser') => void;
 }
 
-const generateId = () => Math.random().toString(36).substring(2, 9);
-
-export const useCanvasStore = create<CanvasStore>((set, get) => ({
-  // Initial state
+export const useCanvasStore = create<CanvasState>((set, get) => ({
   strokes: [],
   currentStroke: null,
   undoStack: [],
@@ -40,15 +43,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   startStroke: (point: Point) => {
     const { currentColor, strokeWidth, tool } = get();
-
-    const stroke: Stroke = {
-      id: generateId(),
-      points: [point],
-      color: tool === 'eraser' ? '#FFFFFF' : currentColor,
-      width: tool === 'eraser' ? strokeWidth * 3 : strokeWidth,
-    };
-
-    set({ currentStroke: stroke });
+    set({
+      currentStroke: {
+        points: [point],
+        color: tool === 'eraser' ? '#FFFFFF' : currentColor,
+        width: tool === 'eraser' ? 20 : strokeWidth,
+        tool,
+      },
+    });
   },
 
   addPoint: (point: Point) => {
@@ -74,7 +76,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       strokes: [...strokes, currentStroke],
       currentStroke: null,
       undoStack: [...undoStack, strokes],
-      redoStack: [], // Clear redo stack on new action
+      redoStack: [],
     });
   },
 
@@ -82,10 +84,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const { strokes, undoStack, redoStack } = get();
     if (undoStack.length === 0) return;
 
-    const previousState = undoStack[undoStack.length - 1];
-
+    const previousStrokes = undoStack[undoStack.length - 1];
     set({
-      strokes: previousState,
+      strokes: previousStrokes,
       undoStack: undoStack.slice(0, -1),
       redoStack: [...redoStack, strokes],
     });
@@ -95,10 +96,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     const { strokes, undoStack, redoStack } = get();
     if (redoStack.length === 0) return;
 
-    const nextState = redoStack[redoStack.length - 1];
-
+    const nextStrokes = redoStack[redoStack.length - 1];
     set({
-      strokes: nextState,
+      strokes: nextStrokes,
       undoStack: [...undoStack, strokes],
       redoStack: redoStack.slice(0, -1),
     });
@@ -117,10 +117,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   setColor: (color: string) => set({ currentColor: color }),
-
   setStrokeWidth: (width: number) => set({ strokeWidth: width }),
-
-  setTool: (tool: 'pen' | 'eraser' | 'highlighter') => set({ tool }),
-
-  getCanvasData: () => get().strokes,
+  setTool: (tool: 'pen' | 'eraser') => set({ tool }),
 }));

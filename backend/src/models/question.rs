@@ -10,6 +10,12 @@ pub struct Question {
     pub topic: String,
     pub subtopic: Option<String>,
     pub difficulty: i32,
+
+    // Multi-part linking
+    pub parent_id: Option<Uuid>,
+    pub part_label: Option<String>,
+    pub part_order: i32,
+
     pub question_latex: String,
     pub answer_latex: String,
     pub solution_steps: serde_json::Value,
@@ -34,6 +40,9 @@ impl Question {
             topic: topic.to_string(),
             subtopic: None,
             difficulty,
+            parent_id: None,
+            part_label: None,
+            part_order: 0,
             question_latex: question_latex.to_string(),
             answer_latex: answer_latex.to_string(),
             solution_steps: serde_json::to_value(&solution_steps).unwrap_or_default(),
@@ -41,6 +50,10 @@ impl Question {
             source: source.to_string(),
             created_at: Some(Utc::now()),
         }
+    }
+
+    pub fn is_multi_part(&self) -> bool {
+        self.parent_id.is_some()
     }
 }
 

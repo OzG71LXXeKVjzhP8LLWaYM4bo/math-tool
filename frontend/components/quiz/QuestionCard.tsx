@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, Text } from 'react-native';
 import { LatexRenderer } from '@/components/latex/LatexRenderer';
-import { DifficultyBadge } from './DifficultyBadge';
 import type { Question } from '@/types';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -17,31 +16,34 @@ export function QuestionCard({
   questionNumber,
   totalQuestions,
 }: QuestionCardProps) {
+  // Debug: log the question object
+  console.log('[QuestionCard] Question object:', JSON.stringify(question, null, 2));
+
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
   const bgColor = isDark ? '#1E1E1E' : '#FFFFFF';
   const textColor = isDark ? Colors.dark.text : Colors.light.text;
   const subtextColor = isDark ? '#888' : '#666';
+  const activeColor = isDark ? Colors.dark.tint : Colors.light.tint;
 
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.topicInfo}>
-          <Text style={[styles.subject, { color: subtextColor }]}>
-            {question.subject.charAt(0).toUpperCase() + question.subject.slice(1)}
-          </Text>
           <Text style={[styles.topic, { color: textColor }]}>{question.topic}</Text>
         </View>
 
         <View style={styles.headerRight}>
           {questionNumber && totalQuestions && (
             <Text style={[styles.questionNumber, { color: subtextColor }]}>
-              {questionNumber}/{totalQuestions}
+              {questionNumber} of {totalQuestions}
             </Text>
           )}
-          <DifficultyBadge difficulty={question.difficulty} />
+          <View style={[styles.examBadge, { backgroundColor: `${activeColor}20` }]}>
+            <Text style={[styles.examBadgeText, { color: activeColor }]}>IB Exam</Text>
+          </View>
         </View>
       </View>
 
@@ -73,23 +75,25 @@ const styles = StyleSheet.create({
   topicInfo: {
     flex: 1,
   },
-  subject: {
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 2,
-  },
   topic: {
     fontSize: 16,
     fontWeight: '600',
   },
   headerRight: {
     alignItems: 'flex-end',
-    gap: 4,
+    gap: 6,
   },
   questionNumber: {
     fontSize: 14,
-    marginBottom: 4,
+  },
+  examBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  examBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   questionContainer: {
     marginTop: 8,

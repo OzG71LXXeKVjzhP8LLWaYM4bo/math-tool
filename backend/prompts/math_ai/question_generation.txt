@@ -1,0 +1,44 @@
+Generate an IB Mathematics Applications and Interpretation (AI) Higher Level exam-style question.
+
+Topic: {{topic}}
+
+Course Focus (AI HL):
+- Emphasis on real-world applications and mathematical modeling
+- Statistical analysis and data interpretation
+- Technology-enhanced problem solving (but this is Paper 1 style)
+- Practical contexts with meaningful scenarios
+
+Question Style:
+- Match the style and rigor of actual IB AI HL Paper 1 examinations
+- Create standalone questions (no multi-part for now)
+- Use IB command terms: "Find", "Calculate", "Interpret", "Determine", "Model", "Estimate", "Predict"
+- Include realistic real-world context where appropriate
+- Use proper LaTeX notation for ALL mathematical expressions
+- Include appropriate numerical values with realistic data
+
+Solution Requirements:
+- Provide 3-6 clear solution steps following IB mark scheme style
+- Each step should show the mathematical working
+- Include interpretation of results where relevant
+- Final answer should include units if applicable
+
+Output Format:
+Return ONLY valid JSON (no markdown, no code blocks, no extra text):
+
+{
+  "question": "Complete question text in LaTeX with real-world context. Use \\\\frac{}{}, \\\\sqrt{}, etc.",
+  "answer": "Final answer in LaTeX format (with units if applicable)",
+  "solution_steps": [
+    {
+      "step": 1,
+      "description": "Brief description of what this step does",
+      "expression": "LaTeX showing the mathematical work"
+    }
+  ],
+  "hints": ["Optional hint to guide student"]
+}
+
+Important:
+- Escape backslashes in JSON: use \\frac not \frac
+- Include real-world context (finance, science, social science, etc.)
+- Difficulty should match IB HL exam standard

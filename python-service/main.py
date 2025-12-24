@@ -1,17 +1,18 @@
 """
 IB Quiz Python Microservice
 
-Provides OCR (Pix2Tex) and Math solving (SymPy) endpoints.
+Provides Math solving (SymPy) endpoints.
+OCR is handled by Gemini Vision in the Rust backend.
 """
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import ocr, solve
+from app.routes import solve
 
 app = FastAPI(
     title="IB Quiz Python Service",
-    description="OCR and Math solver microservice",
+    description="Math solver microservice",
     version="0.1.0",
 )
 
@@ -25,7 +26,6 @@ app.add_middleware(
 )
 
 # Include routes
-app.include_router(ocr.router, prefix="/pix2tex", tags=["OCR"])
 app.include_router(solve.router, prefix="/solve", tags=["Solver"])
 
 

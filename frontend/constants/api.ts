@@ -19,6 +19,7 @@ export const ENDPOINTS = {
   // Quiz
   quizNext: '/quiz/next',
   quizSubmit: '/quiz/submit',
+  quizHistory: '/quiz/history',
 
   // Progress
   progress: '/progress',

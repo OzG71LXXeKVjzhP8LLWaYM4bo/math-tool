@@ -1,14 +1,14 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::models::{Progress, Question, QuizAnswer, QuizSession};
+use crate::models::{Progress, Question, Quiz, QuizAnswer};
 
 // Question queries
 pub async fn insert_question(pool: &PgPool, question: &Question) -> Result<Question, sqlx::Error> {
     sqlx::query_as::<_, Question>(
         r#"
-        INSERT INTO questions (id, subject, topic, subtopic, difficulty, question_latex, answer_latex, solution_steps, hints, source)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO questions (id, subject, topic, subtopic, difficulty, parent_id, part_label, part_order, question_latex, answer_latex, solution_steps, hints, source)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING *
         "#,
     )
@@ -17,6 +17,9 @@ pub async fn insert_question(pool: &PgPool, question: &Question) -> Result<Quest
     .bind(&question.topic)
     .bind(&question.subtopic)
     .bind(question.difficulty)
+    .bind(&question.parent_id)
+    .bind(&question.part_label)
+    .bind(question.part_order)
     .bind(&question.question_latex)
     .bind(&question.answer_latex)
     .bind(&question.solution_steps)
@@ -33,6 +36,19 @@ pub async fn get_question_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Questi
         .await
 }
 
+pub async fn get_question_parts(pool: &PgPool, parent_id: Uuid) -> Result<Vec<Question>, sqlx::Error> {
+    sqlx::query_as::<_, Question>(
+        r#"
+        SELECT * FROM questions
+        WHERE parent_id = $1
+        ORDER BY part_order
+        "#,
+    )
+    .bind(parent_id)
+    .fetch_all(pool)
+    .await
+}
+
 pub async fn get_questions_by_topic(
     pool: &PgPool,
     subject: &str,
@@ -40,11 +56,12 @@ pub async fn get_questions_by_topic(
     difficulty: Option<i32>,
     limit: i64,
 ) -> Result<Vec<Question>, sqlx::Error> {
+    // Only get standalone questions (no parts)
     if let Some(diff) = difficulty {
         sqlx::query_as::<_, Question>(
             r#"
             SELECT * FROM questions
-            WHERE subject = $1 AND topic = $2 AND difficulty = $3
+            WHERE subject = $1 AND topic = $2 AND difficulty = $3 AND parent_id IS NULL
             ORDER BY RANDOM()
             LIMIT $4
             "#,
@@ -59,7 +76,7 @@ pub async fn get_questions_by_topic(
         sqlx::query_as::<_, Question>(
             r#"
             SELECT * FROM questions
-            WHERE subject = $1 AND topic = $2
+            WHERE subject = $1 AND topic = $2 AND parent_id IS NULL
             ORDER BY RANDOM()
             LIMIT $3
             "#,
@@ -72,40 +89,55 @@ pub async fn get_questions_by_topic(
     }
 }
 
-// Quiz session queries
-pub async fn create_quiz_session(
+// Quiz queries
+pub async fn create_quiz(
     pool: &PgPool,
     subject: &str,
     topic: &str,
-) -> Result<QuizSession, sqlx::Error> {
-    sqlx::query_as::<_, QuizSession>(
+    question_ids: &[Uuid],
+) -> Result<Quiz, sqlx::Error> {
+    sqlx::query_as::<_, Quiz>(
         r#"
-        INSERT INTO quiz_sessions (subject, topic)
-        VALUES ($1, $2)
+        INSERT INTO quizzes (subject, topic, question_ids)
+        VALUES ($1, $2, $3)
         RETURNING *
         "#,
     )
     .bind(subject)
     .bind(topic)
+    .bind(question_ids)
     .fetch_one(pool)
     .await
 }
 
-pub async fn get_quiz_session(pool: &PgPool, id: Uuid) -> Result<Option<QuizSession>, sqlx::Error> {
-    sqlx::query_as::<_, QuizSession>("SELECT * FROM quiz_sessions WHERE id = $1")
+pub async fn get_quiz(pool: &PgPool, id: Uuid) -> Result<Option<Quiz>, sqlx::Error> {
+    sqlx::query_as::<_, Quiz>("SELECT * FROM quizzes WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await
 }
 
-pub async fn update_quiz_session_index(
+pub async fn update_quiz_index(
     pool: &PgPool,
     id: Uuid,
     index: i32,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE quiz_sessions SET current_index = $1 WHERE id = $2")
+    sqlx::query("UPDATE quizzes SET current_index = $1 WHERE id = $2")
         .bind(index)
         .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn add_question_to_quiz(
+    pool: &PgPool,
+    quiz_id: Uuid,
+    question_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE quizzes SET question_ids = array_append(question_ids, $1) WHERE id = $2")
+        .bind(question_id)
+        .bind(quiz_id)
         .execute(pool)
         .await?;
     Ok(())
@@ -118,12 +150,17 @@ pub async fn insert_quiz_answer(
 ) -> Result<QuizAnswer, sqlx::Error> {
     sqlx::query_as::<_, QuizAnswer>(
         r#"
-        INSERT INTO quiz_answers (session_id, question_id, answer_latex, is_correct, time_taken)
+        INSERT INTO quiz_answers (quiz_id, question_id, answer_latex, is_correct, time_taken)
         VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (quiz_id, question_id) DO UPDATE SET
+            answer_latex = EXCLUDED.answer_latex,
+            is_correct = EXCLUDED.is_correct,
+            time_taken = EXCLUDED.time_taken,
+            answered_at = NOW()
         RETURNING *
         "#,
     )
-    .bind(&answer.session_id)
+    .bind(&answer.quiz_id)
     .bind(&answer.question_id)
     .bind(&answer.answer_latex)
     .bind(answer.is_correct)
@@ -132,23 +169,38 @@ pub async fn insert_quiz_answer(
     .await
 }
 
-pub async fn get_recent_answers(
+// Quiz history queries
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
+pub struct QuizWithStats {
+    pub id: Uuid,
+    pub subject: String,
+    pub topic: String,
+    pub total_questions: i64,
+    pub correct_answers: i64,
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+pub async fn get_quiz_history(
     pool: &PgPool,
-    subject: &str,
-    topic: &str,
     limit: i64,
-) -> Result<Vec<QuizAnswer>, sqlx::Error> {
-    sqlx::query_as::<_, QuizAnswer>(
+) -> Result<Vec<QuizWithStats>, sqlx::Error> {
+    sqlx::query_as::<_, QuizWithStats>(
         r#"
-        SELECT qa.* FROM quiz_answers qa
-        JOIN quiz_sessions qs ON qa.session_id = qs.id
-        WHERE qs.subject = $1 AND qs.topic = $2
-        ORDER BY qa.answered_at DESC
-        LIMIT $3
+        SELECT
+            q.id,
+            q.subject,
+            q.topic,
+            COALESCE(array_length(q.question_ids, 1), 0)::bigint as total_questions,
+            COALESCE(SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END), 0)::bigint as correct_answers,
+            q.started_at
+        FROM quizzes q
+        LEFT JOIN quiz_answers qa ON qa.quiz_id = q.id
+        GROUP BY q.id, q.subject, q.topic, q.question_ids, q.started_at
+        HAVING COALESCE(array_length(q.question_ids, 1), 0) > 0
+        ORDER BY q.started_at DESC
+        LIMIT $1
         "#,
     )
-    .bind(subject)
-    .bind(topic)
     .bind(limit)
     .fetch_all(pool)
     .await

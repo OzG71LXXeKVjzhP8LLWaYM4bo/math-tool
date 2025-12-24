@@ -21,19 +21,44 @@ impl Database {
     }
 
     pub async fn run_migrations(&self) -> Result<()> {
-        // Create tables if they don't exist
+        // Drop old tables if they exist (clean migration)
+        sqlx::query("DROP TABLE IF EXISTS quiz_answers CASCADE")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DROP TABLE IF EXISTS quiz_sessions CASCADE")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DROP TABLE IF EXISTS quizzes CASCADE")
+            .execute(&self.pool)
+            .await?;
+        sqlx::query("DROP TABLE IF EXISTS questions CASCADE")
+            .execute(&self.pool)
+            .await?;
+
+        // Create questions table with multi-part support
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS questions (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+                -- Classification
                 subject TEXT NOT NULL,
                 topic TEXT NOT NULL,
                 subtopic TEXT,
                 difficulty INTEGER NOT NULL CHECK (difficulty BETWEEN 1 AND 5),
+
+                -- Multi-part linking
+                parent_id UUID REFERENCES questions(id) ON DELETE CASCADE,
+                part_label TEXT,
+                part_order INTEGER DEFAULT 0,
+
+                -- Content
                 question_latex TEXT NOT NULL,
                 answer_latex TEXT NOT NULL,
                 solution_steps JSONB NOT NULL DEFAULT '[]',
                 hints JSONB DEFAULT '[]',
+
+                -- Metadata
                 source TEXT NOT NULL,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
@@ -42,13 +67,23 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
+        // Create quizzes table with question_ids array
         sqlx::query(
             r#"
-            CREATE TABLE IF NOT EXISTS quiz_sessions (
+            CREATE TABLE IF NOT EXISTS quizzes (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+                -- Quiz info
                 subject TEXT NOT NULL,
                 topic TEXT NOT NULL,
+
+                -- Questions (ordered array)
+                question_ids UUID[] NOT NULL DEFAULT '{}',
+
+                -- Progress
                 current_index INTEGER DEFAULT 0,
+
+                -- Timestamps
                 started_at TIMESTAMPTZ DEFAULT NOW(),
                 completed_at TIMESTAMPTZ
             )
@@ -57,22 +92,27 @@ impl Database {
         .execute(&self.pool)
         .await?;
 
+        // Create quiz_answers table
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS quiz_answers (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                session_id UUID REFERENCES quiz_sessions(id) ON DELETE CASCADE,
+                quiz_id UUID REFERENCES quizzes(id) ON DELETE CASCADE,
                 question_id UUID REFERENCES questions(id) ON DELETE CASCADE,
+
                 answer_latex TEXT NOT NULL,
                 is_correct BOOLEAN NOT NULL,
                 time_taken INTEGER NOT NULL,
-                answered_at TIMESTAMPTZ DEFAULT NOW()
+                answered_at TIMESTAMPTZ DEFAULT NOW(),
+
+                UNIQUE(quiz_id, question_id)
             )
             "#,
         )
         .execute(&self.pool)
         .await?;
 
+        // Create progress table
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS progress (

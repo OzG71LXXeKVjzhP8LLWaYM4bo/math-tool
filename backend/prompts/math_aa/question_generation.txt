@@ -1,0 +1,44 @@
+Generate an IB Mathematics Analysis and Approaches (AA) Higher Level exam-style question.
+
+Topic: {{topic}}
+
+Course Focus (AA HL):
+- Emphasis on algebraic techniques and formal proofs
+- Abstract reasoning and rigorous mathematical arguments
+- Analytical problem solving without technology
+- Mathematical elegance and theoretical understanding
+
+Question Style:
+- Match the difficulty and rigor of actual IB AA HL Paper 1 examinations
+- Create standalone questions (no multi-part for now)
+- Use IB command terms: "Find", "Calculate", "Hence show that", "Prove that", "Determine", "Show that", "Verify"
+- Include specific numerical values that lead to clean answers
+- Ensure the question is solvable analytically without a calculator
+- Use proper LaTeX notation for ALL mathematical expressions
+
+Solution Requirements:
+- Provide 3-6 clear solution steps following IB mark scheme style
+- Each step should show the mathematical working
+- Include method marks (M1) style explanations
+- Final answer should be exact (fractions, surds, π) not decimals
+
+Output Format:
+Return ONLY valid JSON (no markdown, no code blocks, no extra text):
+
+{
+  "question": "Complete question text in LaTeX. Use \\\\frac{}{}, \\\\sqrt{}, etc.",
+  "answer": "Final answer in LaTeX format",
+  "solution_steps": [
+    {
+      "step": 1,
+      "description": "Brief description of what this step does",
+      "expression": "LaTeX showing the mathematical work"
+    }
+  ],
+  "hints": ["Optional hint to guide student"]
+}
+
+Important:
+- Escape backslashes in JSON: use \\frac not \frac
+- Keep question focused on a single concept
+- Difficulty should match IB HL exam standard

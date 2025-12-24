@@ -1,50 +1,76 @@
-# IB HL Math/Physics/Chemistry Quiz App
+# IB Math Quiz App
 
-A comprehensive quiz application for IB Higher Level students with handwriting recognition, AI-powered question generation, and adaptive difficulty.
+A quiz application for IB Mathematics Higher Level students with handwriting recognition, AI-powered question generation, and progress tracking.
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  Expo/React     │────▶│  Rust + Axum    │────▶│  Python FastAPI │
-│  Native App     │     │  Backend API    │     │  Microservice   │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
+┌─────────────────┐     ┌─────────────────┐
+│  Expo/React     │────▶│  Rust + Axum    │
+│  Native App     │     │  Backend API    │
+└─────────────────┘     └─────────────────┘
                                │
-                               ▼
-                        ┌─────────────────┐
-                        │  Neon Postgres  │
-                        └─────────────────┘
+                    ┌──────────┴──────────┐
+                    ▼                     ▼
+             ┌─────────────┐      ┌─────────────┐
+             │   Neon      │      │   Gemini    │
+             │  Postgres   │      │     API     │
+             └─────────────┘      └─────────────┘
 ```
 
 ## Features
 
-- **Samsung Notes-style Drawing Canvas** - Write equations by hand
-- **OCR Recognition** - Convert handwriting to LaTeX using Pix2Tex
-- **Math Solver** - Step-by-step solutions using SymPy
+- **Drawing Canvas** - Write equations by hand with stylus support
+- **OCR Recognition** - Convert handwriting to LaTeX using Gemini Vision
 - **AI Question Generation** - IB HL-style questions via Google Gemini
-- **Adaptive Quizzes** - Difficulty adjusts based on performance
-- **Progress Tracking** - Track mastery by topic
+- **Multi-Part Questions** - Authentic IB exam style with (a), (b), (c) parts
+- **Progress Tracking** - Track mastery by topic with streaks and accuracy
+- **Course Selection** - Support for Math AA and Math AI HL
 
 ## Project Structure
 
 ```
 math-tool/
 ├── frontend/          # Expo/React Native app
+│   ├── app/(tabs)/    # Tab-based navigation
+│   │   ├── index.tsx      # Home screen
+│   │   ├── quiz/          # Quiz flow
+│   │   │   ├── index.tsx  # Topic selection
+│   │   │   └── [id].tsx   # Quiz player
+│   │   ├── history.tsx    # Quiz history
+│   │   └── progress.tsx   # Progress tracking
+│   ├── components/    # Reusable components
+│   ├── stores/        # Zustand state management
+│   └── services/      # API client
 ├── backend/           # Rust + Axum API server
-└── python-service/    # Python microservice (OCR + Solver)
+│   ├── src/
+│   │   ├── db/        # Database queries
+│   │   ├── models/    # Data models
+│   │   ├── routes/    # API endpoints
+│   │   └── services/  # Gemini integration
+│   └── prompts/       # Question generation prompts
+└── python-service/    # Python microservice (optional)
 ```
+
+## Database Schema
+
+### Questions Table
+Stores all generated questions with multi-part support:
+- `parent_id` - Links sub-parts to parent question
+- `part_label` - "a", "b", "c" or "i", "ii", "iii"
+- `solution_steps` - JSONB array of worked solutions
+
+### Quizzes Table
+- `question_ids` - UUID array of questions in order
+- `current_index` - Track progress through quiz
+
+### Progress Table
+- Per-topic mastery tracking
+- Streak counting and accuracy metrics
 
 ## Setup
 
-### 1. Python Microservice
-
-```bash
-cd python-service
-uv sync
-uv run uvicorn main:app --reload --port 8000
-```
-
-### 2. Rust Backend
+### 1. Backend
 
 ```bash
 cd backend
@@ -53,7 +79,7 @@ cp .env.example .env
 cargo run
 ```
 
-### 3. Frontend
+### 2. Frontend
 
 ```bash
 cd frontend
@@ -67,52 +93,52 @@ npx expo start
 ```
 DATABASE_URL=postgres://user:pass@ep-xxx.neon.tech/dbname?sslmode=require
 GEMINI_API_KEY=your-gemini-api-key
-PYTHON_SERVICE_URL=http://localhost:8000
+HOST=0.0.0.0
 PORT=3000
+PROMPTS_DIR=./prompts
 ```
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/ocr` | POST | Image → LaTeX conversion |
-| `/api/solve` | POST | Solve math expression |
-| `/api/generate-question` | POST | Generate IB-style question |
+| `/api/ocr` | POST | Handwriting → LaTeX (Gemini Vision) |
 | `/api/quiz/next` | GET | Get next quiz question |
-| `/api/quiz/submit` | POST | Submit answer |
+| `/api/quiz/submit` | POST | Submit answer and get solution |
+| `/api/quiz/history` | GET | Get quiz history |
 | `/api/progress` | GET | Get user progress |
+| `/api/progress/topics` | GET | Get topic-level progress |
 
 ## Tech Stack
 
 - **Frontend**: Expo, React Native, TypeScript, Zustand
 - **Backend**: Rust, Axum, SQLx, PostgreSQL
-- **Python**: FastAPI, Pix2Tex, SymPy
 - **Database**: Neon (Serverless PostgreSQL)
-- **AI**: Google Gemini
+- **AI**: Google Gemini (Flash 2.0)
 
 ## IB Topics Covered
 
-### Mathematics HL
-- Algebra, Functions, Calculus, Statistics, Geometry
+### Mathematics AA HL
+- Number & Algebra
+- Functions
+- Geometry & Trigonometry
+- Statistics & Probability
+- Calculus
 
-### Physics HL
-- Mechanics, Waves, Electricity, Thermal Physics, Nuclear
+### Mathematics AI HL
+- Number & Algebra
+- Functions
+- Geometry & Trigonometry
+- Statistics & Probability
+- Calculus
 
-### Chemistry HL
-- Stoichiometry, Bonding, Energetics, Kinetics, Equilibrium
+## Quiz Flow
 
-## Documentation
-
-- [Setup Guide](./docs/SETUP.md) - Detailed installation instructions
-- [Architecture](./docs/ARCHITECTURE.md) - System design and data flow
-- [API Reference](./docs/API.md) - Complete API documentation
-- [Development Guide](./docs/DEVELOPMENT.md) - Contributing and coding standards
-
-## Screenshots
-
-| Home | Write | Quiz | Progress |
-|------|-------|------|----------|
-| Dashboard with stats | Drawing canvas | Topic selection | Mastery tracking |
+1. **Select Mode** - New Quiz or Continue Previous
+2. **Choose Topic** - Pick subject area and subtopic
+3. **Answer Questions** - Write answer on canvas or type
+4. **View Solution** - See step-by-step worked solution
+5. **Track Progress** - Mastery level updates automatically
 
 ## License
 

@@ -4,10 +4,11 @@ use sqlx::FromRow;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct QuizSession {
+pub struct Quiz {
     pub id: Uuid,
     pub subject: String,
     pub topic: String,
+    pub question_ids: Vec<Uuid>,
     pub current_index: i32,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
@@ -16,7 +17,7 @@ pub struct QuizSession {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct QuizAnswer {
     pub id: Uuid,
-    pub session_id: Uuid,
+    pub quiz_id: Uuid,
     pub question_id: Uuid,
     pub answer_latex: String,
     pub is_correct: bool,
@@ -28,20 +29,21 @@ pub struct QuizAnswer {
 pub struct QuizNextRequest {
     pub subject: String,
     pub topic: String,
-    pub session_id: Option<Uuid>,
+    pub quiz_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct QuizNextResponse {
     pub question: super::Question,
-    pub session_id: Uuid,
+    pub parent_question: Option<super::Question>,  // For multi-part questions
+    pub quiz_id: Uuid,
     pub question_number: i32,
     pub total_questions: i32,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct QuizSubmitRequest {
-    pub session_id: Uuid,
+    pub quiz_id: Uuid,
     pub question_id: Uuid,
     pub answer_latex: String,
     pub time_taken: i32,

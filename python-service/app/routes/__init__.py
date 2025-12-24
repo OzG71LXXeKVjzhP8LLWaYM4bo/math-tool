@@ -1,5 +1,5 @@
 """Routes package."""
 
-from . import ocr, solve
+from . import solve
 
-__all__ = ["ocr", "solve"]
+__all__ = ["solve"]

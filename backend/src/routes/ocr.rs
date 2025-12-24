@@ -1,22 +1,8 @@
 use axum::{extract::State, Json};
-use serde::{Deserialize, Serialize};
 
-use crate::error::{AppError, AppResult};
-use crate::services::GeminiClient;
+use crate::error::AppResult;
+use crate::services::{GeminiClient, OcrRequest, OcrResponse};
 use crate::AppState;
-
-#[derive(Debug, Deserialize)]
-pub struct OcrRequest {
-    pub image_base64: String,
-}
-
-#[derive(Debug, Serialize)]
-pub struct OcrResponse {
-    pub success: bool,
-    pub latex: Option<String>,
-    pub confidence: f32,
-    pub error: Option<String>,
-}
 
 pub async fn ocr_image(
     State(state): State<AppState>,
@@ -24,9 +10,12 @@ pub async fn ocr_image(
 ) -> AppResult<Json<OcrResponse>> {
     // Check if Gemini API key is configured
     if state.config.gemini_api_key.is_empty() {
-        return Err(AppError::ExternalService(
-            "Gemini API key not configured for OCR".to_string(),
-        ));
+        return Ok(Json(OcrResponse {
+            success: false,
+            latex: None,
+            confidence: 0.0,
+            error: Some("OCR service not configured".to_string()),
+        }));
     }
 
     let client = GeminiClient::new(
@@ -35,12 +24,21 @@ pub async fn ocr_image(
         state.prompt_loader.clone(),
     );
 
-    let result = client.ocr_image(&request.image_base64).await?;
-
-    Ok(Json(OcrResponse {
-        success: result.success,
-        latex: result.latex,
-        confidence: if result.success { 0.95 } else { 0.0 }, // Gemini doesn't provide confidence
-        error: result.error,
-    }))
+    match client.ocr_image(&request.image_base64).await {
+        Ok(latex) => Ok(Json(OcrResponse {
+            success: true,
+            latex: Some(latex),
+            confidence: 0.95, // Gemini doesn't provide confidence, using high default
+            error: None,
+        })),
+        Err(e) => {
+            tracing::error!("OCR failed: {}", e);
+            Ok(Json(OcrResponse {
+                success: false,
+                latex: None,
+                confidence: 0.0,
+                error: Some(e.to_string()),
+            }))
+        }
+    }
 }

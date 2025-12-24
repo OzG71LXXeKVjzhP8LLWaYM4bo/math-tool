@@ -9,15 +9,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useProgressStore } from '@/stores/progress-store';
-import { DifficultyBadge } from '@/components/quiz/DifficultyBadge';
+import { useSettingsStore, COURSE_SHORT_NAMES } from '@/stores/settings-store';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { SUBJECT_NAMES, type Subject } from '@/constants/topics';
 
 export default function ProgressScreen() {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const { progress, topicProgress, isLoading, refreshAll, fetchProgress } = useProgressStore();
+  const { progress, quizHistory, isLoading, refreshAll } = useProgressStore();
+  const { course } = useSettingsStore();
 
   useEffect(() => {
     refreshAll();
@@ -37,15 +37,6 @@ export default function ProgressScreen() {
     ? progress.reduce((sum, p) => sum + p.mastery_level, 0) / progress.length
     : 0;
 
-  // Group progress by subject
-  const progressBySubject: Record<string, typeof progress> = {};
-  progress.forEach((p) => {
-    if (!progressBySubject[p.subject]) {
-      progressBySubject[p.subject] = [];
-    }
-    progressBySubject[p.subject].push(p);
-  });
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]}>
       <ScrollView
@@ -57,10 +48,21 @@ export default function ProgressScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={[styles.title, { color: textColor }]}>Progress</Text>
-          <Text style={[styles.subtitle, { color: subtextColor }]}>
-            Track your learning journey
-          </Text>
+          <View style={styles.headerTop}>
+            <View>
+              <Text style={[styles.title, { color: textColor }]}>Progress</Text>
+              <Text style={[styles.subtitle, { color: subtextColor }]}>
+                Track your learning journey
+              </Text>
+            </View>
+            {course && (
+              <View style={[styles.courseBadge, { backgroundColor: `${activeColor}20` }]}>
+                <Text style={[styles.courseBadgeText, { color: activeColor }]}>
+                  {COURSE_SHORT_NAMES[course]}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* Overall Stats */}
@@ -94,27 +96,17 @@ export default function ProgressScreen() {
           </View>
         </View>
 
-        {/* Progress by Subject */}
-        {Object.entries(progressBySubject).map(([subject, subjectProgress]) => (
-          <View key={subject} style={[styles.subjectSection, { backgroundColor: cardBg }]}>
-            <View style={styles.subjectHeader}>
-              <Ionicons
-                name={
-                  subject === 'math'
-                    ? 'calculator'
-                    : subject === 'physics'
-                    ? 'planet'
-                    : 'flask'
-                }
-                size={24}
-                color={activeColor}
-              />
-              <Text style={[styles.subjectTitle, { color: textColor }]}>
-                {SUBJECT_NAMES[subject as Subject] || subject}
+        {/* Progress by Topic */}
+        {progress.length > 0 && (
+          <View style={[styles.topicsSection, { backgroundColor: cardBg }]}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="analytics" size={24} color={activeColor} />
+              <Text style={[styles.sectionTitle, { color: textColor }]}>
+                Topics
               </Text>
             </View>
 
-            {subjectProgress.map((p, index) => {
+            {progress.map((p, index) => {
               const accuracy = p.total_attempts > 0
                 ? p.correct_answers / p.total_attempts
                 : 0;
@@ -161,15 +153,68 @@ export default function ProgressScreen() {
               );
             })}
           </View>
-        ))}
+        )}
+
+        {/* Quiz History */}
+        {quizHistory.length > 0 && (
+          <View style={[styles.topicsSection, { backgroundColor: cardBg }]}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="time" size={24} color={activeColor} />
+              <Text style={[styles.sectionTitle, { color: textColor }]}>
+                Recent Quizzes
+              </Text>
+            </View>
+
+            {quizHistory.map((quiz, index) => {
+              const accuracy = quiz.total_questions > 0
+                ? quiz.correct_answers / quiz.total_questions
+                : 0;
+              const date = quiz.started_at
+                ? new Date(quiz.started_at).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : '';
+
+              return (
+                <View key={quiz.id} style={styles.historyRow}>
+                  <View style={styles.historyInfo}>
+                    <Text style={[styles.historyTopic, { color: textColor }]}>
+                      {quiz.topic}
+                    </Text>
+                    <Text style={[styles.historyMeta, { color: subtextColor }]}>
+                      {date}
+                    </Text>
+                  </View>
+
+                  <View style={styles.historyStats}>
+                    <Text
+                      style={[
+                        styles.historyScore,
+                        { color: accuracy >= 0.7 ? '#4CAF50' : accuracy >= 0.4 ? '#FFC107' : '#F44336' },
+                      ]}
+                    >
+                      {quiz.correct_answers}/{quiz.total_questions}
+                    </Text>
+                    <Text style={[styles.historyAccuracy, { color: subtextColor }]}>
+                      {Math.round(accuracy * 100)}%
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         {/* Empty State */}
-        {progress.length === 0 && !isLoading && (
+        {progress.length === 0 && quizHistory.length === 0 && !isLoading && (
           <View style={[styles.emptyState, { backgroundColor: cardBg }]}>
             <Ionicons name="bar-chart-outline" size={48} color={subtextColor} />
             <Text style={[styles.emptyTitle, { color: textColor }]}>No Progress Yet</Text>
             <Text style={[styles.emptyText, { color: subtextColor }]}>
-              Start a quiz to begin tracking your progress
+              Start practicing to track your progress
             </Text>
           </View>
         )}
@@ -189,6 +234,11 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: 20,
   },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
@@ -196,6 +246,15 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 14,
+  },
+  courseBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  courseBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   statsGrid: {
     flexDirection: 'row',
@@ -218,12 +277,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
-  subjectSection: {
+  topicsSection: {
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
   },
-  subjectHeader: {
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -232,7 +291,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0E020',
   },
-  subjectTitle: {
+  sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
   },
@@ -303,6 +362,36 @@ const styles = StyleSheet.create({
     fontSize: 10,
     width: 28,
     textAlign: 'right',
+  },
+  historyRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E010',
+  },
+  historyInfo: {
+    flex: 1,
+  },
+  historyTopic: {
+    fontSize: 15,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  historyMeta: {
+    fontSize: 12,
+  },
+  historyStats: {
+    alignItems: 'flex-end',
+  },
+  historyScore: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  historyAccuracy: {
+    fontSize: 11,
+    marginTop: 2,
   },
   emptyState: {
     borderRadius: 16,

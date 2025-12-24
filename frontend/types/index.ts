@@ -12,6 +12,11 @@ export interface Question {
   topic: string;
   subtopic?: string;
   difficulty: number;
+  // Multi-part support
+  parent_id?: string;
+  part_label?: string;
+  part_order: number;
+  // Content
   question_latex: string;
   answer_latex: string;
   solution_steps: SolutionStep[];
@@ -20,10 +25,11 @@ export interface Question {
   created_at?: string;
 }
 
-export interface QuizSession {
+export interface Quiz {
   id: string;
   subject: string;
   topic: string;
+  question_ids: string[];
   current_index: number;
   started_at?: string;
   completed_at?: string;
@@ -54,6 +60,15 @@ export interface TopicProgress {
   accuracy: number;
   mastery_level: number;
   streak: number;
+}
+
+export interface QuizHistoryItem {
+  id: string;
+  subject: string;
+  topic: string;
+  total_questions: number;
+  correct_answers: number;
+  started_at?: string;
 }
 
 // API Request/Response Types
@@ -97,18 +112,19 @@ export interface GenerateQuestionResponse {
 export interface QuizNextRequest {
   subject: string;
   topic: string;
-  session_id?: string;
+  quiz_id?: string;
 }
 
 export interface QuizNextResponse {
   question: Question;
-  session_id: string;
+  parent_question?: Question;  // For multi-part questions
+  quiz_id: string;
   question_number: number;
   total_questions: number;
 }
 
 export interface QuizSubmitRequest {
-  session_id: string;
+  quiz_id: string;
   question_id: string;
   answer_latex: string;
   time_taken: number;

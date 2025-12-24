@@ -39,20 +39,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="write"
+        name="history"
         options={{
-          title: 'Write',
+          title: 'History',
           tabBarIcon: ({ color }) => (
-            <Ionicons name="create" size={28} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="upload"
-        options={{
-          title: 'Upload',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="camera" size={28} color={color} />
+            <Ionicons name="time" size={28} color={color} />
           ),
         }}
       />
@@ -68,6 +59,13 @@ export default function TabLayout() {
       {/* Hide the explore tab */}
       <Tabs.Screen
         name="explore"
+        options={{
+          href: null,
+        }}
+      />
+      {/* Hide the dynamic quiz route from tabs */}
+      <Tabs.Screen
+        name="quiz/[id]"
         options={{
           href: null,
         }}

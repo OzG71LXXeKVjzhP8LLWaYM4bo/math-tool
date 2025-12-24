@@ -71,8 +71,6 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         // Health check
         .route("/health", get(routes::health))
-        // OCR routes
-        .route("/api/ocr", post(routes::ocr::ocr_image))
         // Solve routes
         .route("/api/solve", post(routes::solve::solve_expression))
         // Question generation
@@ -80,9 +78,12 @@ async fn main() -> anyhow::Result<()> {
         // Quiz routes
         .route("/api/quiz/next", get(routes::quiz::get_next_question))
         .route("/api/quiz/submit", post(routes::quiz::submit_answer))
+        .route("/api/quiz/history", get(routes::quiz::get_history))
         // Progress routes
         .route("/api/progress", get(routes::progress::get_progress))
         .route("/api/progress/topics", get(routes::progress::get_topic_progress))
+        // OCR route
+        .route("/api/ocr", post(routes::ocr::ocr_image))
         // Middleware
         .layer(TraceLayer::new_for_http())
         .layer(cors)

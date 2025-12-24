@@ -1,60 +1,153 @@
-// IB HL Topics Taxonomy
+// IB Math AA/AI Topics
 
-export type Subject = 'math' | 'physics' | 'chemistry';
+import type { Course } from '@/stores/settings-store';
 
-export interface TopicMap {
-  [category: string]: string[];
+export interface TopicInfo {
+  name: string;
+  subtopics: string[];
 }
 
-export const IB_TOPICS: Record<Subject, TopicMap> = {
-  math: {
-    'Number & Algebra': ['Sequences', 'Logarithms', 'Complex Numbers', 'Proof'],
-    'Functions': ['Transformations', 'Quadratics', 'Exponentials', 'Rational'],
-    'Geometry & Trigonometry': ['Sine/Cosine Rule', 'Radians', 'Identities', 'Vectors'],
-    'Statistics & Probability': ['Distributions', 'Binomial', 'Normal', 'Regression'],
-    'Calculus': ['Differentiation', 'Integration', 'Differential Equations', 'Optimization'],
+export interface TopicMap {
+  [category: string]: TopicInfo;
+}
+
+// IB Math Analysis & Approaches (AA) - HL
+// More rigorous algebra, proofs, and theoretical focus
+export const AA_TOPICS: TopicMap = {
+  'number-algebra': {
+    name: 'Number & Algebra',
+    subtopics: [
+      'Sequences & Series',
+      'Logarithms & Exponents',
+      'Complex Numbers',
+      'Mathematical Proof',
+      'Binomial Theorem',
+    ],
   },
-  physics: {
-    'Mechanics': ['Kinematics', 'Forces', 'Momentum', 'Energy'],
-    'Thermal Physics': ['Temperature', 'Heat Transfer', 'Ideal Gases'],
-    'Waves': ['Wave Properties', 'Sound', 'Light', 'Interference'],
-    'Electricity': ['Circuits', 'Fields', 'Magnetism', 'Induction'],
-    'Nuclear Physics': ['Radioactivity', 'Nuclear Reactions', 'Energy Levels'],
+  'functions': {
+    name: 'Functions',
+    subtopics: [
+      'Transformations',
+      'Composite & Inverse',
+      'Quadratic Functions',
+      'Polynomial Functions',
+      'Rational Functions',
+    ],
   },
-  chemistry: {
-    'Stoichiometry': ['Moles', 'Limiting Reagents', 'Gas Laws'],
-    'Atomic Structure': ['Orbitals', 'Electron Configuration', 'Periodicity'],
-    'Bonding': ['Ionic', 'Covalent', 'Metallic', 'Intermolecular'],
-    'Energetics': ['Enthalpy', 'Hess Law', 'Bond Enthalpies'],
-    'Kinetics': ['Rate Laws', 'Mechanisms', 'Activation Energy'],
-    'Equilibrium': ['Kc', 'Kp', 'Le Chatelier', 'Acids/Bases'],
+  'geometry-trig': {
+    name: 'Geometry & Trigonometry',
+    subtopics: [
+      'Trigonometric Identities',
+      'Sine & Cosine Rules',
+      'Circular Functions',
+      'Vectors',
+      '3D Geometry',
+    ],
+  },
+  'statistics': {
+    name: 'Statistics & Probability',
+    subtopics: [
+      'Probability',
+      'Binomial Distribution',
+      'Normal Distribution',
+      'Regression',
+    ],
+  },
+  'calculus': {
+    name: 'Calculus',
+    subtopics: [
+      'Differentiation',
+      'Integration',
+      'Differential Equations',
+      'Optimization',
+      'Kinematics',
+    ],
   },
 };
 
-export const SUBJECT_NAMES: Record<Subject, string> = {
-  math: 'Mathematics',
-  physics: 'Physics',
-  chemistry: 'Chemistry',
+// IB Math Applications & Interpretation (AI) - HL
+// Applied focus, modeling, technology-oriented
+export const AI_TOPICS: TopicMap = {
+  'number-algebra': {
+    name: 'Number & Algebra',
+    subtopics: [
+      'Sequences & Series',
+      'Loans & Amortization',
+      'Modelling with Functions',
+      'Approximation & Error',
+    ],
+  },
+  'functions': {
+    name: 'Functions',
+    subtopics: [
+      'Linear Models',
+      'Exponential Models',
+      'Logistic Models',
+      'Piecewise Functions',
+    ],
+  },
+  'geometry-trig': {
+    name: 'Geometry & Trigonometry',
+    subtopics: [
+      'Voronoi Diagrams',
+      'Graph Theory',
+      'Trigonometric Models',
+      'Vectors in Applications',
+    ],
+  },
+  'statistics': {
+    name: 'Statistics & Probability',
+    subtopics: [
+      'Descriptive Statistics',
+      'Probability',
+      'Statistical Tests',
+      'Chi-Squared Tests',
+      'Regression Analysis',
+    ],
+  },
+  'calculus': {
+    name: 'Calculus',
+    subtopics: [
+      'Differentiation',
+      'Integration',
+      'Optimization',
+      'Modelling with Calculus',
+    ],
+  },
 };
 
-export const SUBJECT_ICONS: Record<Subject, string> = {
-  math: 'function',
-  physics: 'atom',
-  chemistry: 'flask',
-};
+// Get topics for selected course
+export function getTopicsForCourse(course: Course): TopicMap {
+  return course === 'aa' ? AA_TOPICS : AI_TOPICS;
+}
 
-export const DIFFICULTY_LABELS: Record<number, string> = {
-  1: 'Easy',
-  2: 'Medium-Easy',
-  3: 'Medium',
-  4: 'Medium-Hard',
-  5: 'Hard',
-};
+// Get all topic keys
+export function getTopicKeys(course: Course): string[] {
+  return Object.keys(getTopicsForCourse(course));
+}
 
-export const DIFFICULTY_COLORS: Record<number, string> = {
-  1: '#4CAF50', // Green
-  2: '#8BC34A', // Light Green
-  3: '#FFC107', // Yellow
-  4: '#FF9800', // Orange
-  5: '#F44336', // Red
-};
+// Get topic display name
+export function getTopicName(course: Course, topicKey: string): string {
+  const topics = getTopicsForCourse(course);
+  return topics[topicKey]?.name ?? topicKey;
+}
+
+// Get subtopics for a topic
+export function getSubtopics(course: Course, topicKey: string): string[] {
+  const topics = getTopicsForCourse(course);
+  return topics[topicKey]?.subtopics ?? [];
+}
+
+// Flatten all topics for API calls
+export function getAllSubtopics(course: Course): { topic: string; subtopic: string }[] {
+  const topics = getTopicsForCourse(course);
+  const result: { topic: string; subtopic: string }[] = [];
+
+  for (const [key, info] of Object.entries(topics)) {
+    for (const subtopic of info.subtopics) {
+      result.push({ topic: info.name, subtopic });
+    }
+  }
+
+  return result;
+}

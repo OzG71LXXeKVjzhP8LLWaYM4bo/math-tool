@@ -7,102 +7,126 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { IB_TOPICS, SUBJECT_NAMES, type Subject } from '@/constants/topics';
+import { getTopicsForCourse, type TopicMap } from '@/constants/topics';
+import { useSettingsStore, COURSE_SHORT_NAMES } from '@/stores/settings-store';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 interface TopicSelectorProps {
-  onSelect: (subject: Subject, topic: string) => void;
-  selectedSubject?: Subject;
+  onSelect: (topic: string, subtopic: string) => void;
   selectedTopic?: string;
+  selectedSubtopic?: string;
 }
+
+const TOPIC_ICONS: Record<string, string> = {
+  'number-algebra': 'calculator',
+  'functions': 'git-branch',
+  'geometry-trig': 'shapes',
+  'statistics': 'bar-chart',
+  'calculus': 'analytics',
+};
 
 export function TopicSelector({
   onSelect,
-  selectedSubject,
   selectedTopic,
+  selectedSubtopic,
 }: TopicSelectorProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const [expandedSubject, setExpandedSubject] = useState<Subject | null>(selectedSubject || null);
+  const { course } = useSettingsStore();
+  const [expandedTopic, setExpandedTopic] = useState<string | null>(null);
 
   const textColor = isDark ? Colors.dark.text : Colors.light.text;
   const subtextColor = isDark ? '#888' : '#666';
   const bgColor = isDark ? '#1E1E1E' : '#FFFFFF';
   const activeColor = isDark ? Colors.dark.tint : Colors.light.tint;
 
-  const subjects: Subject[] = ['math', 'physics', 'chemistry'];
+  // Get topics for current course
+  const topics: TopicMap = course ? getTopicsForCourse(course) : {};
+  const topicEntries = Object.entries(topics);
+
+  if (!course) {
+    return (
+      <View style={[styles.emptyContainer, { backgroundColor: bgColor }]}>
+        <Ionicons name="alert-circle" size={48} color={subtextColor} />
+        <Text style={[styles.emptyText, { color: subtextColor }]}>
+          Please select a course first
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.container}>
-      {subjects.map((subject) => (
-        <View key={subject} style={[styles.subjectContainer, { backgroundColor: bgColor }]}>
+      {/* Course badge */}
+      <View style={[styles.courseBadgeContainer, { backgroundColor: bgColor }]}>
+        <Ionicons name="school" size={20} color={activeColor} />
+        <Text style={[styles.courseBadgeText, { color: textColor }]}>
+          {COURSE_SHORT_NAMES[course]} Topics
+        </Text>
+      </View>
+
+      {topicEntries.map(([key, info]) => (
+        <View key={key} style={[styles.topicContainer, { backgroundColor: bgColor }]}>
           <TouchableOpacity
-            style={styles.subjectHeader}
+            style={styles.topicHeader}
             onPress={() =>
-              setExpandedSubject(expandedSubject === subject ? null : subject)
+              setExpandedTopic(expandedTopic === key ? null : key)
             }
           >
-            <View style={styles.subjectTitleContainer}>
+            <View style={styles.topicTitleContainer}>
               <Ionicons
-                name={
-                  subject === 'math'
-                    ? 'calculator'
-                    : subject === 'physics'
-                    ? 'planet'
-                    : 'flask'
-                }
+                name={(TOPIC_ICONS[key] || 'book') as any}
                 size={24}
                 color={activeColor}
               />
-              <Text style={[styles.subjectTitle, { color: textColor }]}>
-                {SUBJECT_NAMES[subject]}
+              <Text style={[styles.topicTitle, { color: textColor }]}>
+                {info.name}
               </Text>
             </View>
-            <Ionicons
-              name={expandedSubject === subject ? 'chevron-up' : 'chevron-down'}
-              size={20}
-              color={subtextColor}
-            />
+            <View style={styles.topicMeta}>
+              <Text style={[styles.subtopicCount, { color: subtextColor }]}>
+                {info.subtopics.length}
+              </Text>
+              <Ionicons
+                name={expandedTopic === key ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color={subtextColor}
+              />
+            </View>
           </TouchableOpacity>
 
-          {expandedSubject === subject && (
-            <View style={styles.topicsContainer}>
-              {Object.entries(IB_TOPICS[subject]).map(([category, topics]) => (
-                <View key={category} style={styles.categoryContainer}>
-                  <Text style={[styles.categoryTitle, { color: subtextColor }]}>
-                    {category}
-                  </Text>
-                  <View style={styles.topicsList}>
-                    {topics.map((topic) => {
-                      const isSelected =
-                        selectedSubject === subject && selectedTopic === topic;
-                      return (
-                        <TouchableOpacity
-                          key={topic}
-                          style={[
-                            styles.topicButton,
-                            isSelected && {
-                              backgroundColor: `${activeColor}20`,
-                              borderColor: activeColor,
-                            },
-                          ]}
-                          onPress={() => onSelect(subject, topic)}
-                        >
-                          <Text
-                            style={[
-                              styles.topicText,
-                              { color: isSelected ? activeColor : textColor },
-                            ]}
-                          >
-                            {topic}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              ))}
+          {expandedTopic === key && (
+            <View style={styles.subtopicsContainer}>
+              {info.subtopics.map((subtopic) => {
+                const isSelected =
+                  selectedTopic === info.name && selectedSubtopic === subtopic;
+                return (
+                  <TouchableOpacity
+                    key={subtopic}
+                    style={[
+                      styles.subtopicButton,
+                      isSelected && {
+                        backgroundColor: `${activeColor}20`,
+                        borderColor: activeColor,
+                      },
+                    ]}
+                    onPress={() => onSelect(info.name, subtopic)}
+                  >
+                    <Text
+                      style={[
+                        styles.subtopicText,
+                        { color: isSelected ? activeColor : textColor },
+                      ]}
+                    >
+                      {subtopic}
+                    </Text>
+                    {isSelected && (
+                      <Ionicons name="checkmark" size={18} color={activeColor} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           )}
         </View>
@@ -115,52 +139,73 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  subjectContainer: {
+  emptyContainer: {
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+  },
+  emptyText: {
+    marginTop: 12,
+    fontSize: 16,
+  },
+  courseBadgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  courseBadgeText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  topicContainer: {
     marginVertical: 6,
     borderRadius: 12,
     overflow: 'hidden',
   },
-  subjectHeader: {
+  topicHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
   },
-  subjectTitleContainer: {
+  topicTitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-  subjectTitle: {
+  topicTitle: {
     fontSize: 18,
     fontWeight: '600',
   },
-  topicsContainer: {
+  topicMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  subtopicCount: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  subtopicsContainer: {
     paddingHorizontal: 16,
     paddingBottom: 16,
   },
-  categoryContainer: {
-    marginBottom: 12,
-  },
-  categoryTitle: {
-    fontSize: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+  subtopicButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E0E0E030',
     marginBottom: 8,
   },
-  topicsList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  topicButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  topicText: {
-    fontSize: 14,
+  subtopicText: {
+    fontSize: 15,
   },
 });

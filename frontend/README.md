@@ -1,50 +1,54 @@
-# Welcome to your Expo app 👋
+# IB Math Quiz - Frontend
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Expo/React Native app for IB Mathematics HL quiz practice.
 
-## Get started
+## Structure
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+app/
+├── (tabs)/
+│   ├── index.tsx          # Home screen with stats
+│   ├── quiz/
+│   │   ├── index.tsx      # Quiz selection (new/continue)
+│   │   └── [id].tsx       # Quiz player
+│   ├── history.tsx        # Quiz history
+│   └── progress.tsx       # Progress tracking
+├── components/
+│   ├── quiz/              # Quiz components
+│   ├── latex/             # LaTeX rendering
+│   └── input/             # Drawing canvas
+├── stores/                # Zustand state
+│   ├── quiz-store.ts      # Quiz state
+│   ├── progress-store.ts  # Progress state
+│   └── settings-store.ts  # App settings
+└── services/
+    └── api.ts             # Backend API client
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Setup
 
-## Learn more
+```bash
+npm install
+npx expo start
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## Environment
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Create `.env` if needed:
+```
+EXPO_PUBLIC_API_URL=http://localhost:3000/api
+```
 
-## Join the community
+## Key Components
 
-Join our community of developers creating universal apps.
+- **TopicSelector** - Browse IB topics by category
+- **QuestionCard** - Display LaTeX questions
+- **AnswerInput** - Drawing canvas + text input
+- **LatexRenderer** - KaTeX-based LaTeX display
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## State Management
+
+Uses Zustand for:
+- `useQuizStore` - Active quiz, current question, answers
+- `useProgressStore` - Topic progress, quiz history
+- `useSettingsStore` - Course selection (AA/AI)

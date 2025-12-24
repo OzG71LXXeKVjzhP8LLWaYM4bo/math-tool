@@ -5,86 +5,80 @@ use axum::{
 use uuid::Uuid;
 
 use crate::db::{
-    create_quiz_session, get_question_by_id, get_questions_by_topic, get_quiz_session,
-    get_recent_answers, insert_quiz_answer, update_quiz_session_index, upsert_progress,
+    add_question_to_quiz, create_quiz, get_question_by_id, get_quiz,
+    insert_question, insert_quiz_answer, update_quiz_index, upsert_progress,
+    QuizWithStats,
 };
 use crate::error::{AppError, AppResult};
 use crate::models::{QuizAnswer, QuizNextRequest, QuizNextResponse, QuizSubmitRequest, QuizSubmitResponse};
-use crate::services::{calculate_next_difficulty, GeminiClient};
+use crate::services::GeminiClient;
 use crate::AppState;
+
+// Fixed exam-level difficulty for all questions
+const EXAM_DIFFICULTY: i32 = 4;
 
 pub async fn get_next_question(
     State(state): State<AppState>,
     Query(request): Query<QuizNextRequest>,
 ) -> AppResult<Json<QuizNextResponse>> {
-    // Get or create quiz session
-    let session = if let Some(session_id) = request.session_id {
-        get_quiz_session(&state.db.pool, session_id)
+    // Get or create quiz
+    let quiz = if let Some(quiz_id) = request.quiz_id {
+        get_quiz(&state.db.pool, quiz_id)
             .await?
-            .ok_or_else(|| AppError::NotFound("Quiz session not found".to_string()))?
+            .ok_or_else(|| AppError::NotFound("Quiz not found".to_string()))?
     } else {
-        create_quiz_session(&state.db.pool, &request.subject, &request.topic).await?
+        // Create a new quiz (start with empty question_ids, will be populated as we go)
+        create_quiz(&state.db.pool, &request.subject, &request.topic, &[]).await?
     };
 
-    // Get recent answers to determine difficulty
-    let recent_answers = get_recent_answers(&state.db.pool, &request.subject, &request.topic, 5).await?;
+    let current_index = quiz.current_index as usize;
 
-    let current_difficulty = if recent_answers.is_empty() {
-        3 // Start at medium difficulty
+    // Check if we have a pre-generated question at this index
+    let question = if current_index < quiz.question_ids.len() {
+        // Return existing question from the quiz
+        let question_id = quiz.question_ids[current_index];
+        get_question_by_id(&state.db.pool, question_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("Question not found".to_string()))?
     } else {
-        calculate_next_difficulty(3, &recent_answers, 50)
-    };
-
-    // Try to get a question from the database first
-    let questions = get_questions_by_topic(
-        &state.db.pool,
-        &request.subject,
-        &request.topic,
-        Some(current_difficulty),
-        1,
-    )
-    .await?;
-
-    let question = if let Some(q) = questions.into_iter().next() {
-        q
-    } else {
-        // Generate a new question if none in database
-        if !state.config.gemini_api_key.is_empty() {
+        // Generate a new question and add it to the quiz
+        let generated_question = if !state.config.gemini_api_key.is_empty() {
             let client = GeminiClient::new(
                 state.http_client.clone(),
                 &state.config.gemini_api_key,
                 state.prompt_loader.clone(),
             );
             client
-                .generate_question(&request.subject, &request.topic, current_difficulty)
+                .generate_question(&request.subject, &request.topic, EXAM_DIFFICULTY)
                 .await?
         } else {
-            // Use fallback template question
-            super::question::generate_question(
-                State(state.clone()),
-                Json(crate::models::GenerateQuestionRequest {
-                    subject: request.subject.clone(),
-                    topic: request.topic.clone(),
-                    difficulty: Some(current_difficulty),
-                    count: Some(1),
-                }),
-            )
-            .await?
-            .0
-            .questions
-            .into_iter()
-            .next()
-            .ok_or_else(|| AppError::Internal("Failed to generate question".to_string()))?
-        }
+            return Err(AppError::Internal("No Gemini API key configured".to_string()));
+        };
+
+        // Insert the question into the database
+        let saved_question = insert_question(&state.db.pool, &generated_question).await?;
+
+        // Add question to quiz
+        add_question_to_quiz(&state.db.pool, quiz.id, saved_question.id).await?;
+
+        saved_question
     };
 
-    // Update session index
-    update_quiz_session_index(&state.db.pool, session.id, session.current_index + 1).await?;
+    // Check if this is a multi-part question - get parent if exists
+    let parent_question = if let Some(parent_id) = question.parent_id {
+        get_question_by_id(&state.db.pool, parent_id).await?
+    } else {
+        None
+    };
+
+    // Update quiz index
+    update_quiz_index(&state.db.pool, quiz.id, quiz.current_index + 1).await?;
 
     Ok(Json(QuizNextResponse {
         question,
-        session_id: session.id,
-        question_number: session.current_index + 1,
+        parent_question,
+        quiz_id: quiz.id,
+        question_number: quiz.current_index + 1,
         total_questions: 10, // Default quiz length
     }))
 }
@@ -98,18 +92,18 @@ pub async fn submit_answer(
         .await?
         .ok_or_else(|| AppError::NotFound("Question not found".to_string()))?;
 
-    // Get the session to know the subject/topic
-    let session = get_quiz_session(&state.db.pool, request.session_id)
+    // Get the quiz to know the subject/topic
+    let quiz = get_quiz(&state.db.pool, request.quiz_id)
         .await?
-        .ok_or_else(|| AppError::NotFound("Quiz session not found".to_string()))?;
+        .ok_or_else(|| AppError::NotFound("Quiz not found".to_string()))?;
 
-    // Check if answer is correct (simplified check - in production, use symbolic math)
+    // Check if answer is correct
     let is_correct = check_answer(&request.answer_latex, &question.answer_latex);
 
     // Store the answer
     let answer = QuizAnswer {
         id: Uuid::new_v4(),
-        session_id: request.session_id,
+        quiz_id: request.quiz_id,
         question_id: request.question_id,
         answer_latex: request.answer_latex.clone(),
         is_correct,
@@ -121,23 +115,26 @@ pub async fn submit_answer(
     // Update progress
     upsert_progress(
         &state.db.pool,
-        &session.subject,
-        &session.topic,
+        &quiz.subject,
+        &quiz.topic,
         is_correct,
         question.difficulty,
     )
     .await?;
 
-    // Calculate next difficulty
-    let recent_answers = get_recent_answers(&state.db.pool, &session.subject, &session.topic, 5).await?;
-    let next_difficulty = calculate_next_difficulty(question.difficulty, &recent_answers, 50);
-
     Ok(Json(QuizSubmitResponse {
         is_correct,
         correct_answer: question.answer_latex,
         solution: question.solution_steps,
-        next_difficulty,
+        next_difficulty: EXAM_DIFFICULTY,
     }))
+}
+
+pub async fn get_history(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<QuizWithStats>>> {
+    let history = crate::db::get_quiz_history(&state.db.pool, 20).await?;
+    Ok(Json(history))
 }
 
 /// Simple answer checking (in production, use symbolic math for equivalence)

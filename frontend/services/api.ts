@@ -12,6 +12,7 @@ import type {
   QuizSubmitResponse,
   Progress,
   TopicProgress,
+  QuizHistoryItem,
 } from '@/types';
 
 class ApiService {
@@ -77,7 +78,7 @@ class ApiService {
     const params = new URLSearchParams({
       subject: request.subject,
       topic: request.topic,
-      ...(request.session_id && { session_id: request.session_id }),
+      ...(request.quiz_id && { quiz_id: request.quiz_id }),
     });
 
     return this.request<QuizNextResponse>(`${ENDPOINTS.quizNext}?${params}`);
@@ -89,6 +90,11 @@ class ApiService {
       method: 'POST',
       body: JSON.stringify(request),
     });
+  }
+
+  // Quiz - Get history
+  async getQuizHistory(): Promise<QuizHistoryItem[]> {
+    return this.request<QuizHistoryItem[]>(ENDPOINTS.quizHistory);
   }
 
   // Progress - Get all progress

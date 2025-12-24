@@ -1,11 +1,12 @@
 import { create } from 'zustand';
-import type { Question, QuizSession, QuizAnswer, SolutionStep } from '@/types';
+import type { Question, Quiz, QuizAnswer, SolutionStep } from '@/types';
 import { api } from '@/services/api';
 
 interface QuizState {
-  // Session state
-  session: QuizSession | null;
+  // Quiz state
+  quiz: Quiz | null;
   currentQuestion: Question | null;
+  parentQuestion: Question | null;  // For multi-part questions
   questionNumber: number;
   totalQuestions: number;
 
@@ -35,8 +36,9 @@ interface QuizState {
 
 export const useQuizStore = create<QuizState>((set, get) => ({
   // Initial state
-  session: null,
+  quiz: null,
   currentQuestion: null,
+  parentQuestion: null,
   questionNumber: 0,
   totalQuestions: 10,
   answers: [],
@@ -53,13 +55,15 @@ export const useQuizStore = create<QuizState>((set, get) => ({
       const response = await api.getNextQuestion({ subject, topic });
 
       set({
-        session: {
-          id: response.session_id,
+        quiz: {
+          id: response.quiz_id,
           subject,
           topic,
+          question_ids: [],
           current_index: 1,
         },
         currentQuestion: response.question,
+        parentQuestion: response.parent_question || null,
         questionNumber: response.question_number,
         totalQuestions: response.total_questions,
         isLoading: false,
@@ -76,20 +80,21 @@ export const useQuizStore = create<QuizState>((set, get) => ({
   },
 
   fetchNextQuestion: async () => {
-    const { session } = get();
-    if (!session) return;
+    const { quiz } = get();
+    if (!quiz) return;
 
     set({ isLoading: true, error: null });
 
     try {
       const response = await api.getNextQuestion({
-        subject: session.subject,
-        topic: session.topic,
-        session_id: session.id,
+        subject: quiz.subject,
+        topic: quiz.topic,
+        quiz_id: quiz.id,
       });
 
       set({
         currentQuestion: response.question,
+        parentQuestion: response.parent_question || null,
         questionNumber: response.question_number,
         totalQuestions: response.total_questions,
         isLoading: false,
@@ -106,8 +111,8 @@ export const useQuizStore = create<QuizState>((set, get) => ({
   },
 
   submitAnswer: async (answerLatex: string) => {
-    const { session, currentQuestion, startTime, answers } = get();
-    if (!session || !currentQuestion) return;
+    const { quiz, currentQuestion, startTime, answers } = get();
+    if (!quiz || !currentQuestion) return;
 
     set({ isLoading: true, error: null });
 
@@ -115,7 +120,7 @@ export const useQuizStore = create<QuizState>((set, get) => ({
 
     try {
       const response = await api.submitAnswer({
-        session_id: session.id,
+        quiz_id: quiz.id,
         question_id: currentQuestion.id,
         answer_latex: answerLatex,
         time_taken: timeTaken,
@@ -150,8 +155,9 @@ export const useQuizStore = create<QuizState>((set, get) => ({
 
   resetQuiz: () =>
     set({
-      session: null,
+      quiz: null,
       currentQuestion: null,
+      parentQuestion: null,
       questionNumber: 0,
       answers: [],
       lastResult: null,
