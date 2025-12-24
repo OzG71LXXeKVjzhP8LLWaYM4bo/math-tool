@@ -8,6 +8,7 @@ use crate::models::{Question, SolutionStep};
 use crate::services::PromptLoader;
 
 const GEMINI_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent";
+const GEMINI_VISION_API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
 #[derive(Debug, Serialize)]
 struct GeminiRequest {
@@ -23,7 +24,42 @@ struct Content {
 
 #[derive(Debug, Serialize)]
 struct Part {
-    text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    inline_data: Option<InlineData>,
+}
+
+#[derive(Debug, Serialize)]
+struct InlineData {
+    mime_type: String,
+    data: String,
+}
+
+impl Part {
+    fn text(text: String) -> Self {
+        Self {
+            text: Some(text),
+            inline_data: None,
+        }
+    }
+
+    fn image(mime_type: &str, base64_data: &str) -> Self {
+        Self {
+            text: None,
+            inline_data: Some(InlineData {
+                mime_type: mime_type.to_string(),
+                data: base64_data.to_string(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct OcrResult {
+    pub success: bool,
+    pub latex: Option<String>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -103,7 +139,7 @@ impl GeminiClient {
 
         let request = GeminiRequest {
             contents: vec![Content {
-                parts: vec![Part { text: prompt }],
+                parts: vec![Part::text(prompt)],
             }],
             generation_config: GenerationConfig {
                 temperature: 0.7,
@@ -157,5 +193,80 @@ impl GeminiClient {
             solution_steps,
             "generated",
         ))
+    }
+
+    /// OCR: Convert handwritten image to LaTeX using Gemini Vision
+    pub async fn ocr_image(&self, image_base64: &str) -> AppResult<OcrResult> {
+        // Load OCR prompt
+        let prompt = self.prompt_loader.load("ocr", None);
+
+        // Parse the base64 data - handle data URL format
+        let (mime_type, base64_data) = if image_base64.starts_with("data:") {
+            // Format: data:image/png;base64,<data>
+            let parts: Vec<&str> = image_base64.splitn(2, ',').collect();
+            if parts.len() != 2 {
+                return Ok(OcrResult {
+                    success: false,
+                    latex: None,
+                    error: Some("Invalid base64 data URL format".to_string()),
+                });
+            }
+            let mime = parts[0]
+                .strip_prefix("data:")
+                .and_then(|s| s.strip_suffix(";base64"))
+                .unwrap_or("image/png");
+            (mime.to_string(), parts[1].to_string())
+        } else {
+            // Raw base64, assume PNG
+            ("image/png".to_string(), image_base64.to_string())
+        };
+
+        let request = GeminiRequest {
+            contents: vec![Content {
+                parts: vec![
+                    Part::image(&mime_type, &base64_data),
+                    Part::text(prompt),
+                ],
+            }],
+            generation_config: GenerationConfig {
+                temperature: 0.1, // Low temperature for accurate transcription
+                max_output_tokens: 1024,
+            },
+        };
+
+        let url = format!("{}?key={}", GEMINI_VISION_API_URL, self.api_key);
+
+        let response = self.client.post(&url).json(&request).send().await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Ok(OcrResult {
+                success: false,
+                latex: None,
+                error: Some(format!("Gemini Vision API error: {}", error_text)),
+            });
+        }
+
+        let gemini_response: GeminiResponse = response.json().await?;
+
+        let latex = gemini_response
+            .candidates
+            .and_then(|c| c.into_iter().next())
+            .map(|c| c.content.parts.into_iter().next())
+            .flatten()
+            .map(|p| p.text.trim().to_string());
+
+        match latex {
+            Some(text) => Ok(OcrResult {
+                success: true,
+                latex: Some(text),
+                error: None,
+            }),
+            None => Ok(OcrResult {
+                success: false,
+                latex: None,
+                error: Some("No response from Gemini Vision".to_string()),
+            }),
+        }
     }
 }

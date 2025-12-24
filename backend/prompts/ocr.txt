@@ -1,0 +1,10 @@
+Convert this handwritten mathematical expression to LaTeX code.
+
+Requirements:
+- Output ONLY the LaTeX code, nothing else
+- Use standard LaTeX math notation
+- Do not wrap in dollar signs or environments unless needed
+- If multiple expressions are visible, separate them with newlines
+- If the handwriting is unclear, make your best interpretation
+
+Output the LaTeX code:

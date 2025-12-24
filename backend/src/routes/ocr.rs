@@ -1,8 +1,8 @@
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 
-use crate::error::AppResult;
-use crate::services::PythonClient;
+use crate::error::{AppError, AppResult};
+use crate::services::GeminiClient;
 use crate::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -22,14 +22,25 @@ pub async fn ocr_image(
     State(state): State<AppState>,
     Json(request): Json<OcrRequest>,
 ) -> AppResult<Json<OcrResponse>> {
-    let client = PythonClient::new(state.http_client, &state.config.python_service_url);
+    // Check if Gemini API key is configured
+    if state.config.gemini_api_key.is_empty() {
+        return Err(AppError::ExternalService(
+            "Gemini API key not configured for OCR".to_string(),
+        ));
+    }
 
-    let response = client.ocr(&request.image_base64).await?;
+    let client = GeminiClient::new(
+        state.http_client.clone(),
+        &state.config.gemini_api_key,
+        state.prompt_loader.clone(),
+    );
+
+    let result = client.ocr_image(&request.image_base64).await?;
 
     Ok(Json(OcrResponse {
-        success: response.success,
-        latex: response.latex,
-        confidence: response.confidence,
-        error: response.error,
+        success: result.success,
+        latex: result.latex,
+        confidence: if result.success { 0.95 } else { 0.0 }, // Gemini doesn't provide confidence
+        error: result.error,
     }))
 }
