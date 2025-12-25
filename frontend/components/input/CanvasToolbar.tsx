@@ -1,5 +1,13 @@
-import React from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, LayoutAnimation, Platform, UIManager } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  Pressable,
+  Modal,
+  Platform,
+  UIManager,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useCanvasStore } from '@/stores/canvas-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -10,517 +18,296 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const COLORS = ['#000000', '#2563EB', '#DC2626', '#16A34A'];
-const STROKE_WIDTHS = [2, 4];
+const COLORS = [
+  '#000000', // Black
+  '#2563EB', // Blue
+  '#DC2626', // Red
+  '#16A34A', // Green
+  '#F59E0B', // Amber
+  '#F97316', // Orange
+  '#8B5CF6', // Purple
+  '#FFFFFF', // White
+];
 
-type InputMode = 'draw' | 'camera';
+const STROKE_WIDTHS = [1, 2, 4, 6];
 
-interface MiniToolbarProps {
-  expanded: boolean;
-  onToggleExpand: () => void;
-  mode: InputMode;
-  onModeChange: (mode: InputMode) => void;
-}
-
-export function MiniToolbar({ expanded, onToggleExpand, mode, onModeChange }: MiniToolbarProps) {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
-  const { currentColor, undoStack, strokes, undo, clear, resetTransform } = useCanvasStore();
-
-  const bgColor = isDark ? '#2A2A2A' : '#F5F5F5';
-  const borderColor = isDark ? '#444' : '#DDD';
-  const activeColor = isDark ? Colors.dark.tint : Colors.light.tint;
-  const iconColor = isDark ? '#CCC' : '#666';
-  const disabledColor = isDark ? '#555' : '#BBB';
-  const textColor = isDark ? Colors.dark.text : Colors.light.text;
-  const subtextColor = isDark ? '#888' : '#666';
-
-  return (
-    <View style={[styles.miniContainer, { backgroundColor: bgColor, borderColor }]}>
-      {/* Left side - Tools */}
-      <View style={styles.miniLeft}>
-        <TouchableOpacity
-          style={styles.miniButton}
-          onPress={onToggleExpand}
-        >
-          <Ionicons
-            name={expanded ? 'chevron-up' : 'settings-outline'}
-            size={20}
-            color={expanded ? activeColor : iconColor}
-          />
-        </TouchableOpacity>
-
-        {/* Current color indicator */}
-        <View style={[styles.colorIndicator, { backgroundColor: currentColor }]} />
-
-        <TouchableOpacity
-          style={styles.miniButton}
-          onPress={undo}
-          disabled={undoStack.length === 0}
-        >
-          <Ionicons
-            name="arrow-undo"
-            size={20}
-            color={undoStack.length === 0 ? disabledColor : iconColor}
-          />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.miniButton}
-          onPress={clear}
-          disabled={strokes.length === 0}
-        >
-          <Ionicons
-            name="trash-outline"
-            size={18}
-            color={strokes.length === 0 ? disabledColor : '#DC2626'}
-          />
-        </TouchableOpacity>
-
-        {resetTransform && (
-          <TouchableOpacity
-            style={styles.miniButton}
-            onPress={resetTransform}
-          >
-            <Ionicons
-              name="scan-outline"
-              size={18}
-              color={iconColor}
-            />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Right side - Mode selector */}
-      <View style={styles.miniRight}>
-        <TouchableOpacity
-          style={[
-            styles.modeTab,
-            mode === 'draw' && { backgroundColor: `${activeColor}20` },
-          ]}
-          onPress={() => onModeChange('draw')}
-        >
-          <Ionicons
-            name="pencil"
-            size={16}
-            color={mode === 'draw' ? activeColor : subtextColor}
-          />
-          <Text style={[styles.modeText, { color: mode === 'draw' ? activeColor : subtextColor }]}>
-            Draw
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.modeTab,
-            mode === 'camera' && { backgroundColor: `${activeColor}20` },
-          ]}
-          onPress={() => onModeChange('camera')}
-        >
-          <Ionicons
-            name="camera"
-            size={16}
-            color={mode === 'camera' ? activeColor : subtextColor}
-          />
-          <Text style={[styles.modeText, { color: mode === 'camera' ? activeColor : subtextColor }]}>
-            Photo
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
-interface ExpandedToolbarProps {
+interface ColorPickerPopupProps {
+  visible: boolean;
   onClose: () => void;
 }
 
-export function ExpandedToolbar({ onClose }: ExpandedToolbarProps) {
+function ColorPickerPopup({ visible, onClose }: ColorPickerPopupProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+
+  const { currentColor, strokeWidth, setColor, setStrokeWidth } = useCanvasStore();
+
+  const bgColor = isDark ? '#2A2A2A' : '#FFFFFF';
+  const borderColor = isDark ? '#444' : '#E0E0E0';
+  const activeColor = isDark ? Colors.dark.tint : Colors.light.tint;
+
+  if (!visible) return null;
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <Pressable
+          style={[styles.popupContainer, { backgroundColor: bgColor, borderColor }]}
+          onPress={(e) => e.stopPropagation()}
+        >
+          {/* Colors - 2 rows of 4 */}
+          <View style={styles.colorsGrid}>
+            {COLORS.map((color) => (
+              <TouchableOpacity
+                key={color}
+                style={[
+                  styles.colorOption,
+                  { backgroundColor: color },
+                  color === '#FFFFFF' && styles.whiteColorBorder,
+                  currentColor === color && [styles.colorSelected, { borderColor: activeColor }],
+                ]}
+                onPress={() => {
+                  setColor(color);
+                  onClose();
+                }}
+              />
+            ))}
+          </View>
+
+          {/* Divider */}
+          <View style={[styles.popupDivider, { backgroundColor: borderColor }]} />
+
+          {/* Stroke widths */}
+          <View style={styles.widthsRow}>
+            {STROKE_WIDTHS.map((width) => (
+              <TouchableOpacity
+                key={width}
+                style={[
+                  styles.widthOption,
+                  strokeWidth === width && { backgroundColor: `${activeColor}20` },
+                ]}
+                onPress={() => {
+                  setStrokeWidth(width);
+                  onClose();
+                }}
+              >
+                <View
+                  style={[
+                    styles.widthDot,
+                    {
+                      width: width * 3 + 4,
+                      height: width * 3 + 4,
+                      backgroundColor: strokeWidth === width ? activeColor : (isDark ? '#888' : '#666'),
+                    },
+                  ]}
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function Divider() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  return (
+    <View
+      style={[
+        styles.divider,
+        { backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)' },
+      ]}
+    />
+  );
+}
+
+interface ToolButtonProps {
+  icon: keyof typeof Ionicons.glyphMap;
+  active?: boolean;
+  onPress: () => void;
+}
+
+function ToolButton({ icon, active, onPress }: ToolButtonProps) {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const activeColor = isDark ? Colors.dark.tint : Colors.light.tint;
+  const iconColor = isDark ? '#CCC' : '#666';
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.toolButton,
+        active && { backgroundColor: `${activeColor}25` },
+      ]}
+      onPress={onPress}
+    >
+      <Ionicons
+        name={icon}
+        size={20}
+        color={active ? activeColor : iconColor}
+      />
+    </TouchableOpacity>
+  );
+}
+
+interface ActionButtonProps {
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  disabled?: boolean;
+  destructive?: boolean;
+}
+
+function ActionButton({ icon, onPress, disabled, destructive }: ActionButtonProps) {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const iconColor = isDark ? '#CCC' : '#666';
+  const disabledColor = isDark ? '#555' : '#BBB';
+  const destructiveColor = '#DC2626';
+
+  return (
+    <TouchableOpacity
+      style={styles.actionButton}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Ionicons
+        name={icon}
+        size={20}
+        color={disabled ? disabledColor : (destructive ? destructiveColor : iconColor)}
+      />
+    </TouchableOpacity>
+  );
+}
+
+export function FloatingToolbar() {
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const [showColorPicker, setShowColorPicker] = useState(false);
 
   const {
     tool,
     currentColor,
-    strokeWidth,
     undoStack,
     redoStack,
     strokes,
     setTool,
-    setColor,
-    setStrokeWidth,
     undo,
     redo,
     clear,
     resetTransform,
   } = useCanvasStore();
 
-  const bgColor = isDark ? '#2A2A2A' : '#F5F5F5';
-  const borderColor = isDark ? '#444' : '#DDD';
-  const activeColor = isDark ? Colors.dark.tint : Colors.light.tint;
-  const iconColor = isDark ? '#CCC' : '#666';
-  const disabledColor = isDark ? '#555' : '#BBB';
+  const bgColor = isDark ? 'rgba(40, 40, 40, 0.95)' : 'rgba(255, 255, 255, 0.95)';
 
   return (
-    <View style={[styles.expandedContainer, { backgroundColor: bgColor, borderColor }]}>
-      {/* Close button */}
-      <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-        <Ionicons name="chevron-up" size={20} color={activeColor} />
-      </TouchableOpacity>
-
-      {/* Divider */}
-      <View style={[styles.divider, { backgroundColor: borderColor }]} />
-
-      {/* Tools */}
-      <View style={styles.section}>
-        <TouchableOpacity
-          style={[
-            styles.toolButton,
-            tool === 'pen' && { backgroundColor: `${activeColor}30` },
-          ]}
-          onPress={() => setTool('pen')}
-        >
-          <Ionicons
-            name="pencil"
-            size={20}
-            color={tool === 'pen' ? activeColor : iconColor}
+    <>
+      <View style={[styles.floatingContainer, { backgroundColor: bgColor }]}>
+        {/* Tools section */}
+        <View style={styles.section}>
+          <ToolButton
+            icon="pencil"
+            active={tool === 'pen'}
+            onPress={() => setTool('pen')}
           />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.toolButton,
-            tool === 'eraser' && { backgroundColor: `${activeColor}30` },
-          ]}
-          onPress={() => setTool('eraser')}
-        >
-          <Ionicons
-            name="color-wand-outline"
-            size={20}
-            color={tool === 'eraser' ? activeColor : iconColor}
+          <ToolButton
+            icon="bandage-outline"
+            active={tool === 'eraser'}
+            onPress={() => setTool('eraser')}
           />
-        </TouchableOpacity>
-      </View>
+        </View>
 
-      {/* Divider */}
-      <View style={[styles.divider, { backgroundColor: borderColor }]} />
+        <Divider />
 
-      {/* Colors */}
-      <View style={styles.section}>
-        {COLORS.map((color) => (
-          <TouchableOpacity
-            key={color}
+        {/* Color indicator */}
+        <TouchableOpacity
+          style={styles.colorIndicatorButton}
+          onPress={() => setShowColorPicker(true)}
+        >
+          <View
             style={[
-              styles.colorButton,
-              { backgroundColor: color },
-              currentColor === color && styles.colorSelected,
-              currentColor === color && { borderColor: activeColor },
+              styles.colorIndicator,
+              { backgroundColor: currentColor },
+              currentColor === '#FFFFFF' && styles.whiteColorBorder,
             ]}
-            onPress={() => setColor(color)}
           />
-        ))}
-      </View>
+        </TouchableOpacity>
 
-      {/* Divider */}
-      <View style={[styles.divider, { backgroundColor: borderColor }]} />
+        <Divider />
 
-      {/* Stroke Width */}
-      <View style={styles.section}>
-        {STROKE_WIDTHS.map((width) => (
-          <TouchableOpacity
-            key={width}
-            style={[
-              styles.widthButton,
-              strokeWidth === width && { backgroundColor: `${activeColor}30` },
-            ]}
-            onPress={() => setStrokeWidth(width)}
-          >
-            <View
-              style={[
-                styles.widthIndicator,
-                {
-                  width: width * 4,
-                  height: width * 4,
-                  backgroundColor: strokeWidth === width ? activeColor : iconColor,
-                },
-              ]}
+        {/* History section */}
+        <View style={styles.section}>
+          <ActionButton
+            icon="arrow-undo"
+            onPress={undo}
+            disabled={undoStack.length === 0}
+          />
+          <ActionButton
+            icon="arrow-redo"
+            onPress={redo}
+            disabled={redoStack.length === 0}
+          />
+        </View>
+
+        <Divider />
+
+        {/* Actions section */}
+        <View style={styles.section}>
+          <ActionButton
+            icon="trash-outline"
+            onPress={clear}
+            disabled={strokes.length === 0}
+            destructive
+          />
+          {resetTransform && (
+            <ActionButton
+              icon="expand-outline"
+              onPress={resetTransform}
             />
-          </TouchableOpacity>
-        ))}
+          )}
+        </View>
       </View>
 
-      {/* Divider */}
-      <View style={[styles.divider, { backgroundColor: borderColor }]} />
-
-      {/* Actions */}
-      <View style={styles.section}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={undo}
-          disabled={undoStack.length === 0}
-        >
-          <Ionicons
-            name="arrow-undo"
-            size={20}
-            color={undoStack.length === 0 ? disabledColor : iconColor}
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={redo}
-          disabled={redoStack.length === 0}
-        >
-          <Ionicons
-            name="arrow-redo"
-            size={20}
-            color={redoStack.length === 0 ? disabledColor : iconColor}
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={clear}
-          disabled={strokes.length === 0}
-        >
-          <Ionicons
-            name="trash-outline"
-            size={20}
-            color={strokes.length === 0 ? disabledColor : '#DC2626'}
-          />
-        </TouchableOpacity>
-        {resetTransform && (
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={resetTransform}
-          >
-            <Ionicons
-              name="scan-outline"
-              size={20}
-              color={iconColor}
-            />
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
+      <ColorPickerPopup
+        visible={showColorPicker}
+        onClose={() => setShowColorPicker(false)}
+      />
+    </>
   );
 }
 
-// Legacy export for backwards compatibility
-export function CanvasToolbar() {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-
-  const {
-    tool,
-    currentColor,
-    strokeWidth,
-    undoStack,
-    redoStack,
-    strokes,
-    setTool,
-    setColor,
-    setStrokeWidth,
-    undo,
-    redo,
-    clear,
-  } = useCanvasStore();
-
-  const bgColor = isDark ? '#2A2A2A' : '#F5F5F5';
-  const borderColor = isDark ? '#444' : '#DDD';
-  const activeColor = isDark ? Colors.dark.tint : Colors.light.tint;
-  const iconColor = isDark ? '#CCC' : '#666';
-  const disabledColor = isDark ? '#555' : '#BBB';
-
-  return (
-    <View style={[styles.container, { backgroundColor: bgColor, borderColor }]}>
-      {/* Tools */}
-      <View style={styles.section}>
-        <TouchableOpacity
-          style={[
-            styles.toolButton,
-            tool === 'pen' && { backgroundColor: `${activeColor}30` },
-          ]}
-          onPress={() => setTool('pen')}
-        >
-          <Ionicons
-            name="pencil"
-            size={20}
-            color={tool === 'pen' ? activeColor : iconColor}
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.toolButton,
-            tool === 'eraser' && { backgroundColor: `${activeColor}30` },
-          ]}
-          onPress={() => setTool('eraser')}
-        >
-          <Ionicons
-            name="color-wand-outline"
-            size={20}
-            color={tool === 'eraser' ? activeColor : iconColor}
-          />
-        </TouchableOpacity>
-      </View>
-
-      <View style={[styles.divider, { backgroundColor: borderColor }]} />
-
-      {/* Colors */}
-      <View style={styles.section}>
-        {COLORS.map((color) => (
-          <TouchableOpacity
-            key={color}
-            style={[
-              styles.colorButton,
-              { backgroundColor: color },
-              currentColor === color && styles.colorSelected,
-              currentColor === color && { borderColor: activeColor },
-            ]}
-            onPress={() => setColor(color)}
-          />
-        ))}
-      </View>
-
-      <View style={[styles.divider, { backgroundColor: borderColor }]} />
-
-      {/* Stroke Width */}
-      <View style={styles.section}>
-        {STROKE_WIDTHS.map((width) => (
-          <TouchableOpacity
-            key={width}
-            style={[
-              styles.widthButton,
-              strokeWidth === width && { backgroundColor: `${activeColor}30` },
-            ]}
-            onPress={() => setStrokeWidth(width)}
-          >
-            <View
-              style={[
-                styles.widthIndicator,
-                {
-                  width: width * 4,
-                  height: width * 4,
-                  backgroundColor: strokeWidth === width ? activeColor : iconColor,
-                },
-              ]}
-            />
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <View style={[styles.divider, { backgroundColor: borderColor }]} />
-
-      {/* Actions */}
-      <View style={styles.section}>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={undo}
-          disabled={undoStack.length === 0}
-        >
-          <Ionicons
-            name="arrow-undo"
-            size={20}
-            color={undoStack.length === 0 ? disabledColor : iconColor}
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={redo}
-          disabled={redoStack.length === 0}
-        >
-          <Ionicons
-            name="arrow-redo"
-            size={20}
-            color={redoStack.length === 0 ? disabledColor : iconColor}
-          />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={clear}
-          disabled={strokes.length === 0}
-        >
-          <Ionicons
-            name="trash-outline"
-            size={20}
-            color={strokes.length === 0 ? disabledColor : '#DC2626'}
-          />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
+// Legacy exports for backwards compatibility
+export { FloatingToolbar as MiniToolbar };
+export { FloatingToolbar as ExpandedToolbar };
+export { FloatingToolbar as CanvasToolbar };
 
 const styles = StyleSheet.create({
-  // Mini toolbar styles
-  miniContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  miniLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  miniRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  miniButton: {
-    padding: 8,
-    borderRadius: 8,
-  },
-  colorIndicator: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    marginHorizontal: 4,
-  },
-  modeTab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-  },
-  modeText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-
-  // Expanded toolbar styles
-  expandedContainer: {
+  // Floating toolbar
+  floatingContainer: {
+    position: 'absolute',
+    bottom: 16,
+    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  closeButton: {
-    padding: 4,
-  },
-
-  // Legacy/shared styles
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginTop: 8,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
   section: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 2,
   },
   divider: {
     width: 1,
@@ -529,28 +316,76 @@ const styles = StyleSheet.create({
   },
   toolButton: {
     padding: 8,
-    borderRadius: 8,
+    borderRadius: 10,
   },
-  colorButton: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+  actionButton: {
+    padding: 8,
+  },
+  colorIndicatorButton: {
+    padding: 4,
+  },
+  colorIndicator: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    borderColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  whiteColorBorder: {
+    borderWidth: 1,
+    borderColor: '#CCC',
+  },
+
+  // Color picker popup
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  popupContainer: {
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  colorsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    width: 176, // 4 colors * 44px
+    gap: 8,
+  },
+  colorOption: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 2,
     borderColor: 'transparent',
   },
   colorSelected: {
-    borderWidth: 2,
+    borderWidth: 3,
   },
-  widthButton: {
-    padding: 8,
-    borderRadius: 8,
+  popupDivider: {
+    height: 1,
+    marginVertical: 12,
+  },
+  widthsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    gap: 8,
+  },
+  widthOption: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  widthIndicator: {
+  widthDot: {
     borderRadius: 50,
-  },
-  actionButton: {
-    padding: 8,
   },
 });

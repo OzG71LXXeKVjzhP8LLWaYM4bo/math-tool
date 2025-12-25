@@ -17,6 +17,7 @@ import {
 import Animated, { useSharedValue, useDerivedValue, runOnJS, useAnimatedReaction } from 'react-native-reanimated';
 import { useCanvasStore, type Point } from '@/stores/canvas-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { FloatingToolbar } from './CanvasToolbar';
 
 // Constants for scale limits
 const MIN_SCALE = 0.1;
@@ -27,6 +28,7 @@ interface DrawingCanvasProps {
   height?: number;
   showGrid?: boolean;
   flexFill?: boolean;
+  showToolbar?: boolean;
   onCanvasReady?: (canvasRef: ReturnType<typeof useCanvasRef>) => void;
 }
 
@@ -38,7 +40,7 @@ const isValidPoint = (p: { x: number; y: number }): boolean =>
 const clampScale = (s: number): number => Math.max(0.1, Math.min(s, 10));
 
 export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
-  ({ height = 250, showGrid = true, flexFill = false, onCanvasReady }, ref) => {
+  ({ height = 250, showGrid = true, flexFill = false, showToolbar = true, onCanvasReady }, ref) => {
     const colorScheme = useColorScheme();
     const isDark = colorScheme === 'dark';
     const [canvasWidth, setCanvasWidth] = useState(300);
@@ -633,6 +635,9 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
               </View>
             </View>
           )}
+
+          {/* Floating toolbar */}
+          {showToolbar && <FloatingToolbar />}
         </View>
       </GestureHandlerRootView>
     );

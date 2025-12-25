@@ -6,24 +6,15 @@ import {
   Text,
   ActivityIndicator,
   useWindowDimensions,
-  LayoutAnimation,
-  Platform,
-  UIManager,
 } from 'react-native';
-import { SkiaView, ImageFormat } from '@shopify/react-native-skia';
+import { ImageFormat } from '@shopify/react-native-skia';
 import { Ionicons } from '@expo/vector-icons';
 import { DrawingCanvas } from './DrawingCanvas';
-import { MiniToolbar, ExpandedToolbar, CanvasToolbar } from './CanvasToolbar';
 import { ImageCapture } from './ImageCapture';
 import { useOcr } from '@/hooks/use-ocr';
 import { useCanvasStore } from '@/stores/canvas-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 type InputMode = 'draw' | 'camera';
 
@@ -50,8 +41,7 @@ export function HandwritingInput({
 
   const [mode, setMode] = useState<InputMode>('draw');
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [toolbarExpanded, setToolbarExpanded] = useState(false);
-  const canvasRef = useRef<SkiaView | null>(null);
+  const canvasRef = useRef<ReturnType<typeof import('@shopify/react-native-skia').useCanvasRef>['current']>(null);
 
   // Callback to receive canvas ref from DrawingCanvas
   const handleCanvasReady = useCallback((ref: ReturnType<typeof import('@shopify/react-native-skia').useCanvasRef>) => {
@@ -70,10 +60,6 @@ export function HandwritingInput({
   const isLandscape = width > height;
   const canvasHeight = isLandscape ? Math.min(height - 200, 400) : Math.min(height * 0.4, 350);
 
-  const toggleToolbar = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setToolbarExpanded(!toolbarExpanded);
-  };
 
   const handleModeChange = (newMode: InputMode) => {
     if (newMode === 'draw') {
@@ -142,61 +128,25 @@ export function HandwritingInput({
     }
   }, [canSubmit, isProcessing, onSubmitReady]);
 
-  // Landscape mode with collapsible toolbar
+  // Landscape mode - full canvas with built-in floating toolbar
   if (landscapeMode) {
     return (
       <View style={styles.landscapeContainer}>
-        {/* Mini Toolbar - always visible */}
-        <MiniToolbar
-          expanded={toolbarExpanded}
-          onToggleExpand={toggleToolbar}
-          mode={mode}
-          onModeChange={handleModeChange}
-        />
-
-        {/* Expanded Toolbar - slides down */}
-        {toolbarExpanded && (
-          <ExpandedToolbar onClose={() => setToolbarExpanded(false)} />
-        )}
-
-        {/* Canvas Area - fills remaining space */}
-        {mode === 'draw' ? (
-          <View style={styles.landscapeCanvasWrapper}>
-            <DrawingCanvas
-              showGrid={true}
-              flexFill={true}
-              onCanvasReady={handleCanvasReady}
-            />
-          </View>
-        ) : (
-          <View style={styles.landscapeCameraWrapper}>
-            <ImageCapture
-              onImageCaptured={handleImageCaptured}
-              capturedImage={capturedImage}
-              onClear={() => {
-                setCapturedImage(null);
-                reset();
-              }}
-              disabled={isProcessing}
-            />
-          </View>
-        )}
+        {/* Canvas Area - fills space with integrated toolbar */}
+        <View style={styles.landscapeCanvasWrapper}>
+          <DrawingCanvas
+            showGrid={true}
+            flexFill={true}
+            showToolbar={true}
+            onCanvasReady={handleCanvasReady}
+          />
+        </View>
 
         {/* Error Display */}
         {error && (
           <View style={[styles.errorContainer, { backgroundColor: `${errorColor}15` }]}>
             <Ionicons name="warning" size={18} color={errorColor} />
             <Text style={[styles.errorText, { color: errorColor }]}>{error}</Text>
-          </View>
-        )}
-
-        {/* Processing indicator for camera mode */}
-        {mode === 'camera' && isProcessing && (
-          <View style={styles.processingOverlay}>
-            <ActivityIndicator color={activeColor} size="large" />
-            <Text style={[styles.processingText, { color: subtextColor }]}>
-              Recognizing handwriting...
-            </Text>
           </View>
         )}
       </View>
@@ -259,9 +209,9 @@ export function HandwritingInput({
           <DrawingCanvas
             height={canvasHeight}
             showGrid={true}
+            showToolbar={true}
             onCanvasReady={handleCanvasReady}
           />
-          <CanvasToolbar />
         </View>
       ) : (
         <ImageCapture
@@ -391,21 +341,5 @@ const styles = StyleSheet.create({
   },
   landscapeCanvasWrapper: {
     flex: 1,
-    marginTop: 8,
-  },
-  landscapeCameraWrapper: {
-    flex: 1,
-    marginTop: 8,
-  },
-  processingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    gap: 12,
   },
 });
