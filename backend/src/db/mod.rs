@@ -76,6 +76,7 @@ impl Database {
                 -- Quiz info
                 subject TEXT NOT NULL,
                 topic TEXT NOT NULL,
+                name TEXT,                  -- Display-friendly name
 
                 -- Questions (ordered array)
                 question_ids UUID[] NOT NULL DEFAULT '{}',

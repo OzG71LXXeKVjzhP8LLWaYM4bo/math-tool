@@ -10,7 +10,7 @@ import {
   Platform,
   UIManager,
 } from 'react-native';
-import ViewShot from 'react-native-view-shot';
+import { SkiaView, ImageFormat } from '@shopify/react-native-skia';
 import { Ionicons } from '@expo/vector-icons';
 import { DrawingCanvas } from './DrawingCanvas';
 import { MiniToolbar, ExpandedToolbar, CanvasToolbar } from './CanvasToolbar';
@@ -51,7 +51,12 @@ export function HandwritingInput({
   const [mode, setMode] = useState<InputMode>('draw');
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [toolbarExpanded, setToolbarExpanded] = useState(false);
-  const viewShotRef = useRef<ViewShot>(null);
+  const canvasRef = useRef<SkiaView | null>(null);
+
+  // Callback to receive canvas ref from DrawingCanvas
+  const handleCanvasReady = useCallback((ref: ReturnType<typeof import('@shopify/react-native-skia').useCanvasRef>) => {
+    canvasRef.current = ref.current;
+  }, []);
 
   const { recognizedLatex, isProcessing, error, processImage, reset } = useOcr();
   const { clear: clearCanvas, strokes } = useCanvasStore();
@@ -85,25 +90,20 @@ export function HandwritingInput({
     if (isProcessing || isLoading || disabled) return;
 
     if (mode === 'draw') {
-      if (!viewShotRef.current || strokes.length === 0) return;
+      if (!canvasRef.current || strokes.length === 0) return;
 
       try {
-        const uri = await viewShotRef.current.capture?.();
-        if (uri) {
-          const response = await fetch(uri);
-          const blob = await response.blob();
-          const reader = new FileReader();
-          reader.onloadend = async () => {
-            const base64 = (reader.result as string).split(',')[1];
-            if (base64) {
-              const latex = await processImage(base64);
-              if (latex) {
-                onSubmit(latex);
-                handleClear();
-              }
+        // Use Skia's native snapshot for better performance
+        const image = canvasRef.current.makeImageSnapshot();
+        if (image) {
+          const base64 = image.encodeToBase64(ImageFormat.PNG, 100);
+          if (base64) {
+            const latex = await processImage(base64);
+            if (latex) {
+              onSubmit(latex);
+              handleClear();
             }
-          };
-          reader.readAsDataURL(blob);
+          }
         }
       } catch (err) {
         console.error('Failed to capture canvas:', err);
@@ -162,13 +162,11 @@ export function HandwritingInput({
         {/* Canvas Area - fills remaining space */}
         {mode === 'draw' ? (
           <View style={styles.landscapeCanvasWrapper}>
-            <ViewShot
-              ref={viewShotRef}
-              options={{ format: 'png', quality: 0.9, result: 'tmpfile' }}
-              style={styles.viewShot}
-            >
-              <DrawingCanvas showGrid={true} flexFill={true} />
-            </ViewShot>
+            <DrawingCanvas
+              showGrid={true}
+              flexFill={true}
+              onCanvasReady={handleCanvasReady}
+            />
           </View>
         ) : (
           <View style={styles.landscapeCameraWrapper}>
@@ -258,12 +256,11 @@ export function HandwritingInput({
       {/* Input Area */}
       {mode === 'draw' ? (
         <View style={styles.drawSection}>
-          <ViewShot
-            ref={viewShotRef}
-            options={{ format: 'png', quality: 0.9, result: 'tmpfile' }}
-          >
-            <DrawingCanvas height={canvasHeight} showGrid={true} />
-          </ViewShot>
+          <DrawingCanvas
+            height={canvasHeight}
+            showGrid={true}
+            onCanvasReady={handleCanvasReady}
+          />
           <CanvasToolbar />
         </View>
       ) : (
@@ -395,9 +392,6 @@ const styles = StyleSheet.create({
   landscapeCanvasWrapper: {
     flex: 1,
     marginTop: 8,
-  },
-  viewShot: {
-    flex: 1,
   },
   landscapeCameraWrapper: {
     flex: 1,

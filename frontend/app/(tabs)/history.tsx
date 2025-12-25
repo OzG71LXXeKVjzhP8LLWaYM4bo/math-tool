@@ -74,7 +74,7 @@ export default function HistoryScreen() {
 
                   <View style={styles.quizInfo}>
                     <Text style={[styles.topicText, { color: textColor }]}>
-                      {quiz.topic}
+                      {quiz.name || quiz.topic}
                     </Text>
                     <Text style={[styles.dateText, { color: subtextColor }]}>
                       {date}

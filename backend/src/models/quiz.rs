@@ -8,6 +8,8 @@ pub struct Quiz {
     pub id: Uuid,
     pub subject: String,
     pub topic: String,
+    #[sqlx(default)]
+    pub name: Option<String>,           // Display-friendly name
     pub question_ids: Vec<Uuid>,
     pub current_index: i32,
     pub started_at: Option<DateTime<Utc>>,

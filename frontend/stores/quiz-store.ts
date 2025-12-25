@@ -44,7 +44,7 @@ interface QuizState {
 
   // Actions
   setConfig: (config: QuizConfig) => void;
-  startQuiz: (subject: string, topic: string) => Promise<void>;
+  startQuiz: (subject: string, topic: string, name?: string) => Promise<void>;
   resumeQuiz: (quizId: string) => Promise<void>;
   fetchNextQuestion: () => Promise<void>;
   submitAnswer: (answerLatex: string) => Promise<void>;
@@ -87,7 +87,7 @@ export const useQuizStore = create<QuizState>((set, get) => ({
   },
 
   // Start a NEW quiz - creates quiz and generates first question
-  startQuiz: async (subject: string, topic: string) => {
+  startQuiz: async (subject: string, topic: string, name?: string) => {
     const { config } = get();
     set({ isLoading: true, error: null });
 
@@ -96,6 +96,7 @@ export const useQuizStore = create<QuizState>((set, get) => ({
       const response = await api.createQuiz({
         subject,
         topic,
+        name,
         mode: config?.mode,
         paper_type: config?.paperType,
         question_count: config?.questionCount,
@@ -109,6 +110,7 @@ export const useQuizStore = create<QuizState>((set, get) => ({
           id: response.id,
           subject: response.subject,
           topic: response.topic,
+          name: response.name,
           question_ids: response.questions.map(q => q.question.id),
           current_index: response.current_index,
           mode: response.mode,
@@ -175,6 +177,7 @@ export const useQuizStore = create<QuizState>((set, get) => ({
           id: response.id,
           subject: response.subject,
           topic: response.topic,
+          name: response.name,
           question_ids: response.questions.map(q => q.question.id),
           current_index: currentIndex,
           mode: response.mode,

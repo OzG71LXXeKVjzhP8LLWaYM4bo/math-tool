@@ -93,6 +93,14 @@ npm install
 npx expo start
 ```
 
+### 3. Build & Run on Android
+
+Requires Java 21 and Android SDK:
+
+```bash
+cd ~/Documents/IB/math-tool/frontend && ANDROID_HOME=$HOME/Android/Sdk JAVA_HOME=/usr/lib/jvm/java-21-openjdk PATH=/usr/lib/jvm/java-21-openjdk/bin:$HOME/Android/Sdk/platform-tools:$HOME/Android/Sdk/cmdline-tools/latest/bin:$PATH npx expo run:android
+```
+
 ## Environment Variables
 
 ### Backend (.env)

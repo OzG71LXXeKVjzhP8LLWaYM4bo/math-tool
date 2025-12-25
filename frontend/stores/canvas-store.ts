@@ -74,7 +74,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   // Low-latency: add a complete stroke (called once per stroke from DrawingCanvas)
   addStroke: (stroke: Stroke) => {
     const { strokes, undoStack } = get();
-    if (stroke.points.length < 2) return;
+    if (stroke.points.length < 1) return;  // Allow single-point strokes (dots)
 
     // Apply memory limit
     let newStrokes = [...strokes, stroke];

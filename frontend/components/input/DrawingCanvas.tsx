@@ -12,6 +12,7 @@ import {
   Gesture,
   GestureDetector,
   GestureHandlerRootView,
+  PointerType,
 } from 'react-native-gesture-handler';
 import Animated, { useSharedValue, useDerivedValue, runOnJS, useAnimatedReaction } from 'react-native-reanimated';
 import { useCanvasStore, type Point } from '@/stores/canvas-store';
@@ -82,7 +83,7 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
     });
 
     // Track current path for rendering (updated by animation reaction)
-    const [currentPath, setCurrentPath] = useState<{ path: SkPath; color: string; width: number } | null>(null);
+    const [currentPath, setCurrentPath] = useState<{ path: SkPath; color: string; width: number; isDot?: boolean } | null>(null);
 
     // Ref to always have current transform (avoids stale closures)
     const transformRef = useRef(transform);
@@ -96,12 +97,40 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
     // Build Skia path from points (called on JS thread when points change)
     const buildCurrentPath = useCallback(() => {
       const points = currentPoints.value;
-      if (points.length < 2) {
+      if (points.length === 0) {
         setCurrentPath(null);
         return;
       }
 
       const path = Skia.Path.Make();
+      const width = widthRef.current;
+
+      // Handle single point (dot) - draw as filled circle
+      if (points.length === 1) {
+        const p = points[0];
+        path.addCircle(p.x, p.y, width / 2);
+        setCurrentPath({
+          path,
+          color: colorRef.current,
+          width,
+          isDot: true,
+        });
+        return;
+      }
+
+      // Handle 2 points - simple line
+      if (points.length === 2) {
+        path.moveTo(points[0].x, points[0].y);
+        path.lineTo(points[1].x, points[1].y);
+        setCurrentPath({
+          path,
+          color: colorRef.current,
+          width,
+        });
+        return;
+      }
+
+      // 3+ points - smooth quadratic curves
       path.moveTo(points[0].x, points[0].y);
 
       for (let i = 1; i < points.length - 1; i++) {
@@ -116,7 +145,7 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
       setCurrentPath({
         path,
         color: colorRef.current,
-        width: widthRef.current,
+        width,
       });
     }, []);
 
@@ -140,6 +169,30 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
         translateY: translateY.value,
       });
     }, []);
+
+    // Continuously sync transform during gestures for smooth pan/zoom
+    useAnimatedReaction(
+      () => ({
+        s: scale.value,
+        tx: translateX.value,
+        ty: translateY.value,
+      }),
+      (current, previous) => {
+        if (
+          !previous ||
+          current.s !== previous.s ||
+          current.tx !== previous.tx ||
+          current.ty !== previous.ty
+        ) {
+          runOnJS(setTransform)({
+            scale: Math.max(MIN_SCALE, Math.min(current.s, MAX_SCALE)),
+            translateX: current.tx,
+            translateY: current.ty,
+          });
+        }
+      },
+      []
+    );
 
     // Notify parent when canvas is ready
     useEffect(() => {
@@ -177,7 +230,7 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
 
     // Finalize stroke - called once per stroke on JS thread
     const finalizeStroke = useCallback((points: { x: number; y: number }[]) => {
-      if (points.length < 2) return;
+      if (points.length < 1) return;
 
       // Convert to Point[] with timestamps
       const strokePoints: Point[] = points.map((p, i) => ({
@@ -215,13 +268,48 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
       isEraserMode.value = tool === 'eraser';
     }, [tool]);
 
-    // Pan gesture for drawing (single finger) - LOW LATENCY VERSION
-    const panGesture = useMemo(() =>
+    // ============ STYLUS-ONLY DRAWING ============
+    // Stylus (S Pen) → draws/erases
+    // Finger → pans (1 finger) or zooms (2 fingers / pinch)
+
+    // Stylus tap gesture for dots (quick stylus taps)
+    const stylusTapGesture = useMemo(() =>
+      Gesture.Tap()
+        .onEnd((e) => {
+          'worklet';
+          // Only respond to stylus input
+          if (e.pointerType !== PointerType.STYLUS) return;
+
+          if (isEraserMode.value) {
+            runOnJS(handleErase)(e.x, e.y);
+            return;
+          }
+
+          // Transform coordinates on UI thread
+          const s = Math.max(MIN_SCALE, Math.min(scale.value, MAX_SCALE));
+          const x = (e.x - translateX.value) / s;
+          const y = (e.y - translateY.value) / s;
+
+          // Create single-point stroke (dot)
+          currentPoints.value = [{ x, y }];
+          pointsVersion.value = pointsVersion.value + 1;
+
+          // Immediately finalize as a dot
+          runOnJS(finalizeStroke)([{ x, y }]);
+        }),
+    [handleErase, finalizeStroke]);
+
+    // Stylus pan gesture for drawing - LOW LATENCY VERSION
+    const stylusPanGesture = useMemo(() =>
       Gesture.Pan()
+        .minDistance(0)  // No minimum distance - register immediately
         .minPointers(1)
         .maxPointers(1)
         .onStart((e) => {
           'worklet';
+          // Only respond to stylus input
+          if (e.pointerType !== PointerType.STYLUS) return;
+
           if (isEraserMode.value) {
             runOnJS(handleErase)(e.x, e.y);
             return;
@@ -239,6 +327,9 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
         })
         .onUpdate((e) => {
           'worklet';
+          // Only respond to stylus input
+          if (e.pointerType !== PointerType.STYLUS) return;
+
           if (isEraserMode.value) {
             runOnJS(handleErase)(e.x, e.y);
             return;
@@ -255,8 +346,11 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
           currentPoints.value = [...currentPoints.value, { x, y }];
           pointsVersion.value = pointsVersion.value + 1;
         })
-        .onEnd(() => {
+        .onEnd((e) => {
           'worklet';
+          // Only respond to stylus input
+          if (e.pointerType !== PointerType.STYLUS) return;
+
           if (isEraserMode.value) return;
 
           if (!isDrawing.value) return;
@@ -269,7 +363,44 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
         }),
     [handleErase, finalizeStroke]);
 
-    // Pinch gesture for zoom - use worklet-safe math
+    // Combine stylus tap and pan for drawing
+    const stylusDrawGesture = useMemo(() =>
+      Gesture.Race(stylusTapGesture, stylusPanGesture),
+    [stylusTapGesture, stylusPanGesture]);
+
+    // ============ FINGER GESTURES (PAN/ZOOM) ============
+
+    // Single finger pan for canvas movement (touch only)
+    const fingerPanGesture = useMemo(() =>
+      Gesture.Pan()
+        .minPointers(1)
+        .maxPointers(1)
+        .onStart((e) => {
+          'worklet';
+          // Only respond to touch (finger) input
+          if (e.pointerType !== PointerType.TOUCH) return;
+
+          savedTranslateX.value = translateX.value;
+          savedTranslateY.value = translateY.value;
+        })
+        .onUpdate((e) => {
+          'worklet';
+          // Only respond to touch (finger) input
+          if (e.pointerType !== PointerType.TOUCH) return;
+
+          translateX.value = savedTranslateX.value + e.translationX;
+          translateY.value = savedTranslateY.value + e.translationY;
+        })
+        .onEnd((e) => {
+          'worklet';
+          // Only respond to touch (finger) input
+          if (e.pointerType !== PointerType.TOUCH) return;
+
+          runOnJS(syncTransform)();
+        }),
+    [syncTransform]);
+
+    // Pinch gesture for zoom (2 fingers)
     const pinchGesture = useMemo(() =>
       Gesture.Pinch()
         .onStart(() => {
@@ -288,7 +419,7 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
         }),
     [syncTransform]);
 
-    // Two-finger pan for canvas movement
+    // Two-finger pan for canvas movement (works alongside pinch)
     const twoFingerPan = useMemo(() =>
       Gesture.Pan()
         .minPointers(2)
@@ -308,24 +439,43 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
         }),
     [syncTransform]);
 
-    // Combine pinch and two-finger pan (simultaneous)
+    // Combine pinch and two-finger pan (simultaneous for zoom+pan)
     const zoomPanGesture = useMemo(() =>
       Gesture.Simultaneous(pinchGesture, twoFingerPan),
     [pinchGesture, twoFingerPan]);
 
-    // IMPORTANT: Drawing (panGesture) must come FIRST in Exclusive
-    // Exclusive prioritizes the first gesture that activates
-    // panGesture requires 1 finger, zoomPanGesture requires 2+
+    // ============ COMPOSED GESTURE ============
+    // All gestures run simultaneously - pointerType filtering handles separation
+    // - Stylus → drawing (stylusDrawGesture)
+    // - 1 finger → pan (fingerPanGesture)
+    // - 2 fingers → zoom+pan (zoomPanGesture)
     const composedGesture = useMemo(() =>
-      Gesture.Exclusive(panGesture, zoomPanGesture),
-    [panGesture, zoomPanGesture]);
+      Gesture.Simultaneous(stylusDrawGesture, fingerPanGesture, zoomPanGesture),
+    [stylusDrawGesture, fingerPanGesture, zoomPanGesture]);
 
     // Convert points to Skia path with validation
-    const pointsToSkiaPath = useCallback((points: { x: number; y: number }[]): SkPath | null => {
-      if (!points || points.length < 2) return null;
+    const pointsToSkiaPath = useCallback((points: { x: number; y: number }[], width: number): SkPath | null => {
+      if (!points || points.length < 1) return null;
       if (!isValidPoint(points[0])) return null;
 
       const path = Skia.Path.Make();
+
+      // Single point - draw as circle (dot)
+      if (points.length === 1) {
+        path.addCircle(points[0].x, points[0].y, width / 2);
+        return path;
+      }
+
+      // Two points - simple line
+      if (points.length === 2) {
+        path.moveTo(points[0].x, points[0].y);
+        if (isValidPoint(points[1])) {
+          path.lineTo(points[1].x, points[1].y);
+        }
+        return path;
+      }
+
+      // 3+ points - smooth curves
       path.moveTo(points[0].x, points[0].y);
 
       for (let i = 1; i < points.length - 1; i++) {
@@ -373,9 +523,10 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
     // Memoize stroke paths (completed strokes from Zustand)
     const strokePaths = useMemo(() => {
       return strokes.map((stroke) => ({
-        path: pointsToSkiaPath(stroke.points),
+        path: pointsToSkiaPath(stroke.points, stroke.width),
         color: stroke.color,
         width: stroke.width,
+        isDot: stroke.points.length === 1,
       }));
     }, [strokes, pointsToSkiaPath]);
 
@@ -424,6 +575,17 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
                   {/* Completed strokes */}
                   {strokePaths.map((strokeData, index) => {
                     if (!strokeData.path) return null;
+                    // Dots (single points) are drawn as filled circles
+                    if (strokeData.isDot) {
+                      return (
+                        <Path
+                          key={index}
+                          path={strokeData.path}
+                          color={strokeData.color}
+                          style="fill"
+                        />
+                      );
+                    }
                     return (
                       <Path
                         key={index}
@@ -439,14 +601,22 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
 
                   {/* Current stroke being drawn */}
                   {currentPath && currentPath.path && (
-                    <Path
-                      path={currentPath.path}
-                      color={currentPath.color}
-                      style="stroke"
-                      strokeWidth={currentPath.width / safeScale}
-                      strokeCap="round"
-                      strokeJoin="round"
-                    />
+                    currentPath.isDot ? (
+                      <Path
+                        path={currentPath.path}
+                        color={currentPath.color}
+                        style="fill"
+                      />
+                    ) : (
+                      <Path
+                        path={currentPath.path}
+                        color={currentPath.color}
+                        style="stroke"
+                        strokeWidth={currentPath.width / safeScale}
+                        strokeCap="round"
+                        strokeJoin="round"
+                      />
+                    )
                   )}
                 </Group>
               </Canvas>

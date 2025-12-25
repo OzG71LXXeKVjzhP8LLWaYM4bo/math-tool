@@ -17,6 +17,7 @@ import { useProgressStore } from '@/stores/progress-store';
 import { useSettingsStore, COURSE_SHORT_NAMES } from '@/stores/settings-store';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { generateSmartQuizName } from '@/utils/quiz-name-generator';
 import type { SessionMode, PaperType } from '@/types';
 import { PAPER_INFO } from '@/types';
 
@@ -86,7 +87,15 @@ export default function QuizSelectScreen() {
     if (selections.length > 0 && course) {
       // Join all selected subtopics as comma-separated string for the API
       const topicString = selections.map((s) => `${s.topic}: ${s.subtopic}`).join(', ');
-      await startQuiz(`math_${course}`, topicString);
+
+      // Generate a smart, concise name for the quiz
+      const smartName = generateSmartQuizName({
+        selections,
+        paperType,
+        course,
+      });
+
+      await startQuiz(`math_${course}`, topicString, smartName);
     }
   };
 
@@ -324,7 +333,7 @@ export default function QuizSelectScreen() {
                   >
                     <View style={styles.quizItemInfo}>
                       <Text style={[styles.quizItemTopic, { color: textColor }]}>
-                        {historyItem.topic}
+                        {historyItem.name || historyItem.topic}
                       </Text>
                       <Text style={[styles.quizItemDate, { color: subtextColor }]}>
                         {date} · {historyItem.correct_answers}/{historyItem.total_questions} correct

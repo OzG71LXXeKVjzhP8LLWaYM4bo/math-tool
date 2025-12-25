@@ -70,6 +70,7 @@ export interface Quiz {
   id: string;
   subject: string;
   topic: string;
+  name?: string; // Display-friendly name
   question_ids: string[];
   current_index: number;
   started_at?: string;
@@ -112,6 +113,7 @@ export interface QuizHistoryItem {
   id: string;
   subject: string;
   topic: string;
+  name?: string; // Display-friendly name
   total_questions: number;
   correct_answers: number;
   started_at?: string;
@@ -147,6 +149,7 @@ export interface GenerateQuestionResponse {
 export interface CreateQuizRequest {
   subject: string;
   topic: string;
+  name?: string;
   mode?: SessionMode;
   paper_type?: PaperType;
   question_count?: number;
@@ -157,6 +160,7 @@ export interface QuizResponse {
   id: string;
   subject: string;
   topic: string;
+  name?: string;
   current_index: number;
   question_count: number;
   mode?: SessionMode;
