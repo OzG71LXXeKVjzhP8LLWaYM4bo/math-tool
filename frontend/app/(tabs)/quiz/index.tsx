@@ -35,8 +35,7 @@ export default function QuizSelectScreen() {
   const [sessionMode, setSessionMode] = useState<SessionMode>('quiz');
   const [paperType, setPaperType] = useState<PaperType>('paper1');
   const [questionCount, setQuestionCount] = useState(5);
-  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
-  const [selectedSubtopic, setSelectedSubtopic] = useState<string | null>(null);
+  const [selections, setSelections] = useState<Array<{ topic: string; subtopic: string }>>([]);
 
   const textColor = isDark ? Colors.dark.text : Colors.light.text;
   const subtextColor = isDark ? '#888' : '#666';
@@ -79,14 +78,15 @@ export default function QuizSelectScreen() {
     setFlowMode('topic');
   };
 
-  const handleTopicSelect = (topic: string, subtopic: string) => {
-    setSelectedTopic(topic);
-    setSelectedSubtopic(subtopic);
+  const handleSelectionChange = (newSelections: Array<{ topic: string; subtopic: string }>) => {
+    setSelections(newSelections);
   };
 
   const handleStartQuiz = async () => {
-    if (selectedTopic && selectedSubtopic && course) {
-      await startQuiz(`math_${course}`, `${selectedTopic}: ${selectedSubtopic}`);
+    if (selections.length > 0 && course) {
+      // Join all selected subtopics as comma-separated string for the API
+      const topicString = selections.map((s) => `${s.topic}: ${s.subtopic}`).join(', ');
+      await startQuiz(`math_${course}`, topicString);
     }
   };
 
@@ -99,8 +99,7 @@ export default function QuizSelectScreen() {
       setFlowMode('select');
     } else if (flowMode === 'topic') {
       setFlowMode('setup');
-      setSelectedTopic(null);
-      setSelectedSubtopic(null);
+      setSelections([]);
     } else if (flowMode === 'resume') {
       setFlowMode('select');
     }
@@ -112,7 +111,7 @@ export default function QuizSelectScreen() {
   // Mode selection screen
   if (flowMode === 'select') {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]} edges={['top', 'left', 'right']}>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
           <View style={styles.header}>
             <View style={styles.headerTop}>
@@ -176,7 +175,7 @@ export default function QuizSelectScreen() {
   // Setup screen (paper type + question count)
   if (flowMode === 'setup') {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]} edges={['top', 'left', 'right']}>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Ionicons name="arrow-back" size={24} color={textColor} />
@@ -282,7 +281,7 @@ export default function QuizSelectScreen() {
   // Resume quiz selection
   if (flowMode === 'resume') {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]} edges={['top', 'left', 'right']}>
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Ionicons name="arrow-back" size={24} color={textColor} />
@@ -356,7 +355,7 @@ export default function QuizSelectScreen() {
 
   // Topic selection
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]} edges={['top', 'left', 'right']}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Ionicons name="arrow-back" size={24} color={textColor} />
@@ -403,12 +402,11 @@ export default function QuizSelectScreen() {
         </View>
 
         <TopicSelector
-          onSelect={handleTopicSelect}
-          selectedTopic={selectedTopic || undefined}
-          selectedSubtopic={selectedSubtopic || undefined}
+          onSelectionChange={handleSelectionChange}
+          selections={selections}
         />
 
-        {selectedTopic && selectedSubtopic && (
+        {selections.length > 0 && (
           <TouchableOpacity
             style={[styles.startButton, { backgroundColor: activeColor, opacity: isLoading ? 0.7 : 1 }]}
             onPress={handleStartQuiz}

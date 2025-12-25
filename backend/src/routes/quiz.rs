@@ -60,7 +60,7 @@ pub struct QuestionWithAnswer {
     pub is_correct: Option<bool>,
 }
 
-/// POST /api/quiz - Create a new quiz and generate first question
+/// POST /api/quiz - Create a new quiz and generate ALL questions upfront
 pub async fn create_new_quiz(
     State(state): State<AppState>,
     Json(request): Json<CreateQuizRequest>,
@@ -75,7 +75,7 @@ pub async fn create_new_quiz(
         None
     };
 
-    // Create a new quiz
+    // Create a new quiz (initially with no questions)
     let quiz = create_quiz(
         &state.db.pool,
         &request.subject,
@@ -88,19 +88,20 @@ pub async fn create_new_quiz(
     )
     .await?;
 
-    // Generate the first question
-    let first_question = if !state.config.gemini_api_key.is_empty() {
+    // Generate ALL questions in a single API call
+    let generated_questions = if !state.config.gemini_api_key.is_empty() {
         let client = GeminiClient::new(
             state.http_client.clone(),
             &state.config.gemini_api_key,
             state.prompt_loader.clone(),
         );
         client
-            .generate_question(
+            .generate_questions(
                 &request.subject,
                 &request.topic,
                 EXAM_DIFFICULTY,
                 request.paper_type.as_deref(),
+                question_count,
             )
             .await?
     } else {
@@ -109,24 +110,36 @@ pub async fn create_new_quiz(
         ));
     };
 
-    // Save and add to quiz
-    let saved_question = insert_question(&state.db.pool, &first_question).await?;
-    add_question_to_quiz(&state.db.pool, quiz.id, saved_question.id).await?;
+    // Save all questions and add to quiz
+    let mut saved_questions = Vec::with_capacity(generated_questions.len());
+    for question in generated_questions {
+        let saved = insert_question(&state.db.pool, &question).await?;
+        add_question_to_quiz(&state.db.pool, quiz.id, saved.id).await?;
+        saved_questions.push(saved);
+    }
+
+    // Build response with all questions
+    let questions_with_answers: Vec<QuestionWithAnswer> = saved_questions
+        .into_iter()
+        .map(|q| QuestionWithAnswer {
+            question: q,
+            user_answer: None,
+            is_correct: None,
+        })
+        .collect();
+
+    let actual_count = questions_with_answers.len() as i32;
 
     Ok(Json(QuizResponse {
         id: quiz.id,
         subject: quiz.subject,
         topic: quiz.topic,
         current_index: 0,
-        question_count,
+        question_count: actual_count,
         mode: quiz.mode,
         paper_type: quiz.paper_type,
         time_limit,
-        questions: vec![QuestionWithAnswer {
-            question: saved_question,
-            user_answer: None,
-            is_correct: None,
-        }],
+        questions: questions_with_answers,
     }))
 }
 
@@ -186,42 +199,16 @@ pub async fn get_next_question(
         .ok_or_else(|| AppError::NotFound("Quiz not found".to_string()))?;
 
     let current_index = quiz.current_index as usize;
-    let paper_type = quiz.paper_type.clone();
 
-    // Check if we have a question at this index already
-    let question = if current_index < quiz.question_ids.len() {
-        // Return existing question
-        let question_id = quiz.question_ids[current_index];
-        get_question_by_id(&state.db.pool, question_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound("Question not found".to_string()))?
-    } else {
-        // Generate a new question
-        let generated_question = if !state.config.gemini_api_key.is_empty() {
-            let client = GeminiClient::new(
-                state.http_client.clone(),
-                &state.config.gemini_api_key,
-                state.prompt_loader.clone(),
-            );
-            client
-                .generate_question(
-                    &quiz.subject,
-                    &quiz.topic,
-                    EXAM_DIFFICULTY,
-                    paper_type.as_deref(),
-                )
-                .await?
-        } else {
-            return Err(AppError::Internal(
-                "No Gemini API key configured".to_string(),
-            ));
-        };
+    // All questions are generated at quiz creation, just retrieve
+    if current_index >= quiz.question_ids.len() {
+        return Err(AppError::NotFound("No more questions in quiz".to_string()));
+    }
 
-        // Save and add to quiz
-        let saved_question = insert_question(&state.db.pool, &generated_question).await?;
-        add_question_to_quiz(&state.db.pool, quiz.id, saved_question.id).await?;
-        saved_question
-    };
+    let question_id = quiz.question_ids[current_index];
+    let question = get_question_by_id(&state.db.pool, question_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Question not found".to_string()))?;
 
     // Get parent question if this is a part
     let parent_question = if let Some(parent_id) = question.parent_id {

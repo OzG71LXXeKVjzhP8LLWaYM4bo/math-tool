@@ -37,7 +37,7 @@ export default function SettingsScreen() {
   const borderColor = isDark ? '#333' : '#E0E0E0';
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]} edges={['top', 'left', 'right']}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>

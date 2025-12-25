@@ -133,7 +133,7 @@ export default function QuizPlayerScreen() {
   // Loading state
   if (isLoading && !currentQuestion) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]} edges={['top', 'left', 'right']}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={activeColor} />
           <Text style={[styles.loadingText, { color: subtextColor }]}>
@@ -147,7 +147,7 @@ export default function QuizPlayerScreen() {
   // No quiz loaded
   if (!quiz || !currentQuestion) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]} edges={['top', 'left', 'right']}>
         <View style={styles.loadingContainer}>
           <Ionicons name="alert-circle-outline" size={48} color={subtextColor} />
           <Text style={[styles.loadingText, { color: textColor }]}>
@@ -171,7 +171,7 @@ export default function QuizPlayerScreen() {
     const currentReview = allResults[reviewIndex];
 
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]} edges={['top', 'left', 'right']}>
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
           {/* Results Header */}
           <View style={styles.resultsHeader}>
@@ -379,7 +379,7 @@ export default function QuizPlayerScreen() {
   // Portrait layout
   if (!isLandscape) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]}>
+      <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]} edges={['top', 'left', 'right']}>
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={styles.header}>
@@ -417,7 +417,7 @@ export default function QuizPlayerScreen() {
 
   // Landscape layout
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]} edges={['top', 'left', 'right']}>
       {/* Header bar */}
       <View style={styles.headerBar}>
         <TouchableOpacity style={styles.backButton} onPress={handleExit}>

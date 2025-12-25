@@ -1,4 +1,4 @@
-Generate an IB Mathematics Higher Level exam-style question.
+Generate exactly {{count}} IB Mathematics Higher Level exam-style questions.
 
 Subject: {{subject}}
 Topic: {{topic}}
@@ -7,23 +7,31 @@ Paper Type: {{paper_type}}
 {{paper_instructions}}
 
 Requirements:
+- Generate exactly {{count}} different questions
 - Match IB HL exam difficulty and style for the specified paper type
-- Create a standalone question (no multi-part)
+- Create standalone questions (no multi-part)
 - Use proper LaTeX notation for all mathematical expressions
 - Include specific numerical values that lead to clean answers
+- Each question should test a different aspect of the topic
+- When multiple topics are listed, create questions that integrate concepts across topics
+- Some questions should combine 2-3 topics to test deeper understanding and connections
 
 Output Format:
-Return ONLY valid JSON (no markdown, no code blocks):
+Return ONLY valid JSON array (no markdown, no code blocks):
 
-{
-  "question": "Question text in LaTeX. Use \\\\frac{}{}, \\\\sqrt{}, etc.",
-  "answer": "Final answer in LaTeX",
-  "solution_steps": [
-    {
-      "step": 1,
-      "description": "Step description",
-      "expression": "LaTeX expression"
-    }
-  ],
-  "hints": ["Hint for student"]
-}
+[
+  {
+    "question": "Question text in LaTeX. Use \\frac{}{}, \\sqrt{}, etc.",
+    "answer": "Final answer in LaTeX",
+    "solution_steps": [
+      {
+        "step": 1,
+        "description": "Step description",
+        "expression": "LaTeX expression"
+      }
+    ],
+    "hints": ["Hint for student"]
+  }
+]
+
+Return exactly {{count}} question objects in the array.

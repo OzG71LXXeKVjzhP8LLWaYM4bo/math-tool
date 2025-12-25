@@ -84,6 +84,33 @@ fn extract_json(text: &str) -> Option<String> {
     }
 }
 
+/// Extract JSON array from text that might contain extra content
+fn extract_json_array(text: &str) -> Option<String> {
+    let start = text.find('[')?;
+    let mut depth = 0;
+    let mut end = start;
+
+    for (i, c) in text[start..].char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = start + i + 1;
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if depth == 0 && end > start {
+        Some(text[start..end].to_string())
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct GeneratedQuestion {
     question: String,
@@ -206,6 +233,104 @@ impl GeminiClient {
             solution_steps,
             "generated",
         ))
+    }
+
+    /// Generate multiple questions in a single API call
+    pub async fn generate_questions(
+        &self,
+        subject: &str,
+        topic: &str,
+        difficulty: i32,
+        paper_type: Option<&str>,
+        count: i32,
+    ) -> AppResult<Vec<Question>> {
+        let mut vars = HashMap::new();
+        vars.insert("subject", subject.to_string());
+        vars.insert("topic", topic.to_string());
+        vars.insert("difficulty", difficulty.to_string());
+        vars.insert("paper_type", paper_type.unwrap_or("paper1").to_string());
+        vars.insert("count", count.to_string());
+
+        // Add paper-specific instructions
+        let paper_instructions = match paper_type {
+            Some("paper1") => "Paper 1 style: NO CALCULATOR. Use exact values only (fractions, surds, π, e). Focus on algebraic manipulation, factorization, simplification, and proofs. Include 'show that' steps. Penalize decimal approximations.",
+            Some("paper2") => "Paper 2 style: CALCULATOR ALLOWED. Use real-world context (motion, growth, economics, optimization). Include numerical solving, graph interpretation, statistics. Ask for interpretation of results and model assumptions.",
+            Some("paper3") => "Paper 3 style: HL Investigation. CALCULATOR ALLOWED. Create unfamiliar problem settings with new definitions. Require multi-topic integration and deep reasoning. Use 'explore', 'investigate', 'hence deduce' language. Focus on proof and mathematical discovery.",
+            _ => "Paper 1 style: NO CALCULATOR. Use exact values only.",
+        };
+        vars.insert("paper_instructions", paper_instructions.to_string());
+
+        let prompt = self.prompt_loader.load_and_render(
+            "question_generation",
+            Some(subject),
+            &vars,
+        );
+
+        let chat_req = ChatRequest::new(vec![
+            ChatMessage::system(
+                "You are a JSON API for generating IB Math exam questions. \
+                 Return ONLY valid JSON array. No markdown, no code fences, no explanations. \
+                 Each question should test a different aspect of the topic."
+            ),
+            ChatMessage::user(prompt),
+        ]);
+
+        let options = ChatOptions::default()
+            .with_temperature(0.5)  // Slightly higher for variety
+            .with_max_tokens(16384);  // More tokens for multiple questions
+
+        let response = self.client
+            .exec_chat(MODEL, chat_req, Some(&options))
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Gemini API error: {}", e)))?;
+
+        let text = response
+            .content_text_as_str()
+            .ok_or_else(|| AppError::ExternalService("No response from Gemini".to_string()))?;
+
+        // Strip markdown fences and extract JSON array
+        let stripped = strip_markdown_fences(text);
+        let json_text = extract_json_array(&stripped).unwrap_or(stripped);
+
+        // Fix LaTeX escapes
+        let fixed_json = fix_latex_escapes(&json_text);
+
+        // Parse the JSON array response
+        let generated: Vec<GeneratedQuestion> = serde_json::from_str(&fixed_json).map_err(|e| {
+            AppError::ExternalService(format!(
+                "Failed to parse Gemini response: {} - {}",
+                e,
+                &fixed_json[..fixed_json.len().min(300)]
+            ))
+        })?;
+
+        // Convert to Question objects
+        let questions: Vec<Question> = generated
+            .into_iter()
+            .map(|g| {
+                let solution_steps: Vec<SolutionStep> = g
+                    .solution_steps
+                    .into_iter()
+                    .map(|s| SolutionStep {
+                        step_number: s.step,
+                        description: s.description,
+                        expression_latex: s.expression,
+                    })
+                    .collect();
+
+                Question::new(
+                    subject,
+                    topic,
+                    difficulty,
+                    &g.question,
+                    &g.answer,
+                    solution_steps,
+                    "generated",
+                )
+            })
+            .collect();
+
+        Ok(questions)
     }
 
     pub async fn ocr_image(&self, image_base64: &str) -> AppResult<String> {

@@ -53,7 +53,7 @@ export default function HomeScreen() {
   const topicEntries = Object.entries(topics);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? Colors.dark.background : '#F5F5F5' }]} edges={['top', 'left', 'right']}>
       {/* Course Selection Modal */}
       <Modal
         visible={showCourseModal}

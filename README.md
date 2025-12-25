@@ -20,10 +20,14 @@ A quiz application for IB Mathematics Higher Level students with handwriting rec
 
 ## Features
 
-- **Drawing Canvas** - Write equations by hand with stylus support
+- **Drawing Canvas** - Write equations by hand with stylus/S Pen support, pan & zoom
 - **OCR Recognition** - Convert handwriting to LaTeX using Gemini Vision
 - **AI Question Generation** - IB HL-style questions via Google Gemini
-- **Multi-Part Questions** - Authentic IB exam style with (a), (b), (c) parts
+- **Multi-Topic Selection** - Select multiple topics with "Select All" buttons for mixed practice
+- **Cross-Topic Questions** - AI generates questions that integrate concepts across topics
+- **Paper Types** - Paper 1 (no calc), Paper 2 (calc allowed), Paper 3 (investigation)
+- **Batch Generation** - All quiz questions generated upfront for seamless experience
+- **Immersive Mode** - Android navigation bar hidden for distraction-free practice
 - **Progress Tracking** - Track mastery by topic with streaks and accuracy
 - **Course Selection** - Support for Math AA and Math AI HL
 
@@ -35,21 +39,23 @@ math-tool/
 │   ├── app/(tabs)/    # Tab-based navigation
 │   │   ├── index.tsx      # Home screen
 │   │   ├── quiz/          # Quiz flow
-│   │   │   ├── index.tsx  # Topic selection
+│   │   │   ├── index.tsx  # Topic/paper selection
 │   │   │   └── [id].tsx   # Quiz player
 │   │   ├── history.tsx    # Quiz history
-│   │   └── progress.tsx   # Progress tracking
+│   │   ├── progress.tsx   # Progress tracking
+│   │   └── settings.tsx   # App settings
 │   ├── components/    # Reusable components
+│   │   ├── input/     # DrawingCanvas, HandwritingInput
+│   │   └── quiz/      # TopicSelector, AnswerInput
 │   ├── stores/        # Zustand state management
 │   └── services/      # API client
-├── backend/           # Rust + Axum API server
-│   ├── src/
-│   │   ├── db/        # Database queries
-│   │   ├── models/    # Data models
-│   │   ├── routes/    # API endpoints
-│   │   └── services/  # Gemini integration
-│   └── prompts/       # Question generation prompts
-└── python-service/    # Python microservice (optional)
+└── backend/           # Rust + Axum API server
+    ├── src/
+    │   ├── db/        # Database queries
+    │   ├── models/    # Data models
+    │   ├── routes/    # API endpoints
+    │   └── services/  # Gemini integration
+    └── prompts/       # Question generation prompts
 ```
 
 ## Database Schema
@@ -134,11 +140,12 @@ PROMPTS_DIR=./prompts
 
 ## Quiz Flow
 
-1. **Select Mode** - New Quiz or Continue Previous
-2. **Choose Topic** - Pick subject area and subtopic
-3. **Answer Questions** - Write answer on canvas or type
-4. **View Solution** - See step-by-step worked solution
-5. **Track Progress** - Mastery level updates automatically
+1. **Select Mode** - New Quiz or Resume Previous
+2. **Configure Session** - Choose paper type (1/2/3) and question count
+3. **Select Topics** - Pick multiple topics with "Select All" buttons
+4. **Answer Questions** - Write answer on canvas (with pan/zoom) or type
+5. **View Solution** - See step-by-step worked solution with LaTeX
+6. **Track Progress** - Mastery level updates automatically
 
 ## License
 
