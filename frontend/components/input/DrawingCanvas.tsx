@@ -1,191 +1,163 @@
-import React, { forwardRef, useState, useMemo, useCallback, useRef } from 'react';
-import { View, StyleSheet, LayoutChangeEvent, PanResponder, Text, GestureResponderEvent } from 'react-native';
-import Svg, { Path, G } from 'react-native-svg';
-import { useCanvasStore } from '@/stores/canvas-store';
+import React, { forwardRef, useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { View, StyleSheet, LayoutChangeEvent, Text } from 'react-native';
+import {
+  Canvas,
+  Path,
+  Skia,
+  Group,
+  useCanvasRef,
+  SkPath,
+} from '@shopify/react-native-skia';
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
+import Animated, { useSharedValue, useDerivedValue, runOnJS, useAnimatedReaction } from 'react-native-reanimated';
+import { useCanvasStore, type Point } from '@/stores/canvas-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+
+// Constants for scale limits
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 10;
 
 interface DrawingCanvasProps {
   width?: number;
   height?: number;
   showGrid?: boolean;
   flexFill?: boolean;
+  onCanvasReady?: (canvasRef: ReturnType<typeof useCanvasRef>) => void;
 }
 
-interface Transform {
-  scale: number;
-  translateX: number;
-  translateY: number;
-}
+// Validate that a point has finite coordinates
+const isValidPoint = (p: { x: number; y: number }): boolean =>
+  Number.isFinite(p.x) && Number.isFinite(p.y);
 
-// Get distance between two touch points
-const getDistance = (touches: { pageX: number; pageY: number }[]) => {
-  if (touches.length < 2) return 0;
-  const dx = touches[0].pageX - touches[1].pageX;
-  const dy = touches[0].pageY - touches[1].pageY;
-  return Math.sqrt(dx * dx + dy * dy);
-};
-
-// Get center point between two touches
-const getCenter = (touches: { pageX: number; pageY: number }[]) => {
-  if (touches.length < 2) return { x: 0, y: 0 };
-  return {
-    x: (touches[0].pageX + touches[1].pageX) / 2,
-    y: (touches[0].pageY + touches[1].pageY) / 2,
-  };
-};
+// Safe scale clamping to prevent division by zero/infinity
+const clampScale = (s: number): number => Math.max(0.1, Math.min(s, 10));
 
 export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
-  ({ height = 250, showGrid = true, flexFill = false }, ref) => {
+  ({ height = 250, showGrid = true, flexFill = false, onCanvasReady }, ref) => {
     const colorScheme = useColorScheme();
     const isDark = colorScheme === 'dark';
     const [canvasWidth, setCanvasWidth] = useState(300);
     const [canvasHeight, setCanvasHeight] = useState(height);
+    const canvasRef = useCanvasRef();
 
+    // Get store state and actions
     const strokes = useCanvasStore((s) => s.strokes);
-    const currentStroke = useCanvasStore((s) => s.currentStroke);
-    const startStroke = useCanvasStore((s) => s.startStroke);
-    const addPoint = useCanvasStore((s) => s.addPoint);
-    const endStroke = useCanvasStore((s) => s.endStroke);
+    const addStroke = useCanvasStore((s) => s.addStroke);
     const tool = useCanvasStore((s) => s.tool);
-    const setTool = useCanvasStore((s) => s.setTool);
+    const eraseAt = useCanvasStore((s) => s.eraseAt);
+    const currentColor = useCanvasStore((s) => s.currentColor);
+    const strokeWidth = useCanvasStore((s) => s.strokeWidth);
 
-    // Transform state for pan/zoom
-    const [transform, setTransform] = useState<Transform>({
+    // Refs to access current stroke settings in callbacks
+    const colorRef = useRef(currentColor);
+    const widthRef = useRef(strokeWidth);
+    useEffect(() => { colorRef.current = currentColor; }, [currentColor]);
+    useEffect(() => { widthRef.current = strokeWidth; }, [strokeWidth]);
+
+    // ============ LOW-LATENCY DRAWING ============
+    // Current stroke points stored in shared value (UI thread only)
+    // This eliminates runOnJS per-point and React re-renders during drawing
+    const currentPoints = useSharedValue<{ x: number; y: number }[]>([]);
+    const isDrawing = useSharedValue(false);
+    // Trigger re-render when points change (for Skia path update)
+    const pointsVersion = useSharedValue(0);
+
+    // Transform state using shared values for gestures
+    const scale = useSharedValue(1);
+    const translateX = useSharedValue(0);
+    const translateY = useSharedValue(0);
+    const savedScale = useSharedValue(1);
+    const savedTranslateX = useSharedValue(0);
+    const savedTranslateY = useSharedValue(0);
+
+    // React state for rendering (synced from shared values)
+    const [transform, setTransform] = useState({
       scale: 1,
       translateX: 0,
       translateY: 0,
     });
 
-    // Refs for gesture tracking
-    const isDrawing = useRef(false);
-    const isPinching = useRef(false);
-    const lastDistance = useRef(0);
-    const lastCenter = useRef({ x: 0, y: 0 });
-    const savedTransform = useRef<Transform>({ scale: 1, translateX: 0, translateY: 0 });
-    const previousTool = useRef<'pen' | 'eraser'>('pen');
-    const sPenButtonPressed = useRef(false);
+    // Track current path for rendering (updated by animation reaction)
+    const [currentPath, setCurrentPath] = useState<{ path: SkPath; color: string; width: number } | null>(null);
 
-    // Convert screen coordinates to canvas coordinates
-    const screenToCanvas = useCallback((screenX: number, screenY: number) => {
-      return {
-        x: (screenX - transform.translateX) / transform.scale,
-        y: (screenY - transform.translateY) / transform.scale,
-      };
+    // Ref to always have current transform (avoids stale closures)
+    const transformRef = useRef(transform);
+    useEffect(() => {
+      transformRef.current = transform;
     }, [transform]);
 
-    // Check if S Pen button is pressed (uses button property on Android)
-    const isSPenButtonPressed = (evt: GestureResponderEvent) => {
-      const nativeEvent = evt.nativeEvent as any;
-      // S Pen button press is indicated by button === 2 or 32 depending on device
-      // Also check for stylus with button pressed
-      return nativeEvent.button === 2 || nativeEvent.button === 32 ||
-             (nativeEvent.pointerType === 'pen' && nativeEvent.buttons > 1);
-    };
+    // Safe scale for rendering (prevents division by zero)
+    const safeScale = clampScale(transform.scale);
 
-    const panResponder = useMemo(
-      () =>
-        PanResponder.create({
-          onStartShouldSetPanResponder: () => true,
-          onMoveShouldSetPanResponder: () => true,
-          onPanResponderGrant: (evt) => {
-            const touches = evt.nativeEvent.touches;
+    // Build Skia path from points (called on JS thread when points change)
+    const buildCurrentPath = useCallback(() => {
+      const points = currentPoints.value;
+      if (points.length < 2) {
+        setCurrentPath(null);
+        return;
+      }
 
-            // Check for S Pen button press - switch to eraser temporarily
-            if (isSPenButtonPressed(evt)) {
-              sPenButtonPressed.current = true;
-              previousTool.current = tool;
-              setTool('eraser');
-            }
+      const path = Skia.Path.Make();
+      path.moveTo(points[0].x, points[0].y);
 
-            if (touches.length >= 2) {
-              // Two finger gesture - start pinch/pan
-              isPinching.current = true;
-              isDrawing.current = false;
-              lastDistance.current = getDistance(touches as any);
-              lastCenter.current = getCenter(touches as any);
-              savedTransform.current = { ...transform };
-            } else {
-              // Single finger - drawing
-              isDrawing.current = true;
-              isPinching.current = false;
-              const { locationX, locationY } = evt.nativeEvent;
-              const point = screenToCanvas(locationX, locationY);
-              startStroke(point);
-            }
-          },
-          onPanResponderMove: (evt) => {
-            const touches = evt.nativeEvent.touches;
+      for (let i = 1; i < points.length - 1; i++) {
+        const midX = (points[i].x + points[i + 1].x) / 2;
+        const midY = (points[i].y + points[i + 1].y) / 2;
+        path.quadTo(points[i].x, points[i].y, midX, midY);
+      }
 
-            if (touches.length >= 2 && !isDrawing.current) {
-              // Two finger gesture - pinch to zoom and pan
-              isPinching.current = true;
+      const last = points[points.length - 1];
+      path.lineTo(last.x, last.y);
 
-              const newDistance = getDistance(touches as any);
-              const newCenter = getCenter(touches as any);
+      setCurrentPath({
+        path,
+        color: colorRef.current,
+        width: widthRef.current,
+      });
+    }, []);
 
-              if (lastDistance.current > 0) {
-                // Calculate scale change
-                const scaleChange = newDistance / lastDistance.current;
-                const newScale = Math.max(0.5, Math.min(savedTransform.current.scale * scaleChange, 4));
-
-                // Calculate pan
-                const dx = newCenter.x - lastCenter.current.x;
-                const dy = newCenter.y - lastCenter.current.y;
-
-                setTransform({
-                  scale: newScale,
-                  translateX: savedTransform.current.translateX + dx,
-                  translateY: savedTransform.current.translateY + dy,
-                });
-              }
-            } else if (isDrawing.current && touches.length === 1) {
-              // Single finger - continue drawing
-              const { locationX, locationY } = evt.nativeEvent;
-              const point = screenToCanvas(locationX, locationY);
-              addPoint(point);
-            }
-          },
-          onPanResponderRelease: (evt) => {
-            if (isDrawing.current) {
-              endStroke();
-            }
-
-            // Restore previous tool if S Pen button was pressed
-            if (sPenButtonPressed.current) {
-              setTool(previousTool.current);
-              sPenButtonPressed.current = false;
-            }
-
-            isDrawing.current = false;
-            isPinching.current = false;
-            lastDistance.current = 0;
-          },
-          onPanResponderTerminate: () => {
-            if (isDrawing.current) {
-              endStroke();
-            }
-
-            // Restore previous tool if S Pen button was pressed
-            if (sPenButtonPressed.current) {
-              setTool(previousTool.current);
-              sPenButtonPressed.current = false;
-            }
-
-            isDrawing.current = false;
-            isPinching.current = false;
-            lastDistance.current = 0;
-          },
-        }),
-      [startStroke, addPoint, endStroke, screenToCanvas, transform, tool, setTool]
+    // React to points version changes to rebuild path
+    useAnimatedReaction(
+      () => pointsVersion.value,
+      (version, prevVersion) => {
+        if (version !== prevVersion) {
+          runOnJS(buildCurrentPath)();
+        }
+      },
+      []
     );
+
+    // Sync transform to React state for rendering
+    const syncTransform = useCallback(() => {
+      const newScale = clampScale(scale.value);
+      setTransform({
+        scale: newScale,
+        translateX: translateX.value,
+        translateY: translateY.value,
+      });
+    }, []);
+
+    // Notify parent when canvas is ready
+    useEffect(() => {
+      if (onCanvasReady && canvasRef) {
+        onCanvasReady(canvasRef);
+      }
+    }, [canvasRef, onCanvasReady]);
 
     // Reset transform function exposed to toolbar
     const resetTransform = useCallback(() => {
+      scale.value = 1;
+      translateX.value = 0;
+      translateY.value = 0;
       setTransform({ scale: 1, translateX: 0, translateY: 0 });
     }, []);
 
     // Expose reset function via store
-    React.useEffect(() => {
+    useEffect(() => {
       useCanvasStore.setState({ resetTransform });
     }, [resetTransform]);
 
@@ -199,115 +171,300 @@ export const DrawingCanvas = forwardRef<View, DrawingCanvasProps>(
 
     const effectiveHeight = flexFill ? canvasHeight : height;
 
-    const pointsToPath = (points: { x: number; y: number }[]): string => {
-      if (!points || points.length < 2) return '';
-      let path = `M ${points[0].x} ${points[0].y}`;
-      for (let i = 1; i < points.length; i++) {
-        path += ` L ${points[i].x} ${points[i].y}`;
-      }
-      return path;
-    };
-
     const bgColor = isDark ? '#1A1A1A' : '#FFFFFF';
     const gridColor = isDark ? '#333333' : '#E8E8E8';
     const borderColor = isDark ? '#444444' : '#CCCCCC';
 
-    // Extended grid for pan/zoom
-    const gridLines = useMemo(() => {
+    // Finalize stroke - called once per stroke on JS thread
+    const finalizeStroke = useCallback((points: { x: number; y: number }[]) => {
+      if (points.length < 2) return;
+
+      // Convert to Point[] with timestamps
+      const strokePoints: Point[] = points.map((p, i) => ({
+        x: p.x,
+        y: p.y,
+        t: Date.now() - (points.length - i), // Approximate timestamps
+      }));
+
+      // Add to Zustand store (single React render)
+      addStroke({
+        points: strokePoints,
+        color: colorRef.current,
+        width: widthRef.current,
+        tool: 'pen',
+      });
+
+      // Clear current path
+      setCurrentPath(null);
+    }, [addStroke]);
+
+    // Handle eraser on JS thread
+    const handleErase = useCallback((x: number, y: number) => {
+      const t = transformRef.current;
+      const s = clampScale(t.scale);
+      const point = {
+        x: (x - t.translateX) / s,
+        y: (y - t.translateY) / s,
+      };
+      eraseAt(point);
+    }, [eraseAt]);
+
+    // Shared value to track tool on UI thread
+    const isEraserMode = useSharedValue(tool === 'eraser');
+    useEffect(() => {
+      isEraserMode.value = tool === 'eraser';
+    }, [tool]);
+
+    // Pan gesture for drawing (single finger) - LOW LATENCY VERSION
+    const panGesture = useMemo(() =>
+      Gesture.Pan()
+        .minPointers(1)
+        .maxPointers(1)
+        .onStart((e) => {
+          'worklet';
+          if (isEraserMode.value) {
+            runOnJS(handleErase)(e.x, e.y);
+            return;
+          }
+
+          // Transform coordinates on UI thread (no runOnJS!)
+          const s = Math.max(MIN_SCALE, Math.min(scale.value, MAX_SCALE));
+          const x = (e.x - translateX.value) / s;
+          const y = (e.y - translateY.value) / s;
+
+          // Start new stroke in shared value
+          currentPoints.value = [{ x, y }];
+          isDrawing.value = true;
+          pointsVersion.value = pointsVersion.value + 1;
+        })
+        .onUpdate((e) => {
+          'worklet';
+          if (isEraserMode.value) {
+            runOnJS(handleErase)(e.x, e.y);
+            return;
+          }
+
+          if (!isDrawing.value) return;
+
+          // Transform coordinates on UI thread
+          const s = Math.max(MIN_SCALE, Math.min(scale.value, MAX_SCALE));
+          const x = (e.x - translateX.value) / s;
+          const y = (e.y - translateY.value) / s;
+
+          // Append point to shared value (stays on UI thread)
+          currentPoints.value = [...currentPoints.value, { x, y }];
+          pointsVersion.value = pointsVersion.value + 1;
+        })
+        .onEnd(() => {
+          'worklet';
+          if (isEraserMode.value) return;
+
+          if (!isDrawing.value) return;
+          isDrawing.value = false;
+
+          // Only NOW sync to JS thread (once per stroke)
+          const points = currentPoints.value;
+          currentPoints.value = [];
+          runOnJS(finalizeStroke)(points);
+        }),
+    [handleErase, finalizeStroke]);
+
+    // Pinch gesture for zoom - use worklet-safe math
+    const pinchGesture = useMemo(() =>
+      Gesture.Pinch()
+        .onStart(() => {
+          'worklet';
+          savedScale.value = scale.value;
+        })
+        .onUpdate((e) => {
+          'worklet';
+          // Clamp scale on UI thread using inline math (no JS function call)
+          const newScale = savedScale.value * e.scale;
+          scale.value = Math.max(MIN_SCALE, Math.min(newScale, MAX_SCALE));
+        })
+        .onEnd(() => {
+          'worklet';
+          runOnJS(syncTransform)();
+        }),
+    [syncTransform]);
+
+    // Two-finger pan for canvas movement
+    const twoFingerPan = useMemo(() =>
+      Gesture.Pan()
+        .minPointers(2)
+        .onStart(() => {
+          'worklet';
+          savedTranslateX.value = translateX.value;
+          savedTranslateY.value = translateY.value;
+        })
+        .onUpdate((e) => {
+          'worklet';
+          translateX.value = savedTranslateX.value + e.translationX;
+          translateY.value = savedTranslateY.value + e.translationY;
+        })
+        .onEnd(() => {
+          'worklet';
+          runOnJS(syncTransform)();
+        }),
+    [syncTransform]);
+
+    // Combine pinch and two-finger pan (simultaneous)
+    const zoomPanGesture = useMemo(() =>
+      Gesture.Simultaneous(pinchGesture, twoFingerPan),
+    [pinchGesture, twoFingerPan]);
+
+    // IMPORTANT: Drawing (panGesture) must come FIRST in Exclusive
+    // Exclusive prioritizes the first gesture that activates
+    // panGesture requires 1 finger, zoomPanGesture requires 2+
+    const composedGesture = useMemo(() =>
+      Gesture.Exclusive(panGesture, zoomPanGesture),
+    [panGesture, zoomPanGesture]);
+
+    // Convert points to Skia path with validation
+    const pointsToSkiaPath = useCallback((points: { x: number; y: number }[]): SkPath | null => {
+      if (!points || points.length < 2) return null;
+      if (!isValidPoint(points[0])) return null;
+
+      const path = Skia.Path.Make();
+      path.moveTo(points[0].x, points[0].y);
+
+      for (let i = 1; i < points.length - 1; i++) {
+        if (!isValidPoint(points[i]) || !isValidPoint(points[i + 1])) continue;
+        const midX = (points[i].x + points[i + 1].x) / 2;
+        const midY = (points[i].y + points[i + 1].y) / 2;
+        path.quadTo(points[i].x, points[i].y, midX, midY);
+      }
+
+      const last = points[points.length - 1];
+      if (isValidPoint(last)) {
+        path.lineTo(last.x, last.y);
+      }
+
+      return path;
+    }, []);
+
+    // Grid path
+    const gridPath = useMemo(() => {
       if (!showGrid) return null;
-      const lines = [];
+
+      const path = Skia.Path.Make();
       const gridSpacing = 25;
-      // Extend grid beyond visible area for panning
       const extendFactor = 3;
       const extendedWidth = canvasWidth * extendFactor;
       const extendedHeight = effectiveHeight * extendFactor;
       const offsetX = -canvasWidth;
       const offsetY = -effectiveHeight;
 
+      // Vertical lines
       for (let x = offsetX; x < extendedWidth + offsetX; x += gridSpacing) {
-        lines.push(
-          <Path
-            key={`v-${x}`}
-            d={`M ${x} ${offsetY} L ${x} ${extendedHeight + offsetY}`}
-            stroke={gridColor}
-            strokeWidth={0.5 / transform.scale}
-          />
-        );
+        path.moveTo(x, offsetY);
+        path.lineTo(x, extendedHeight + offsetY);
       }
+
+      // Horizontal lines
       for (let y = offsetY; y < extendedHeight + offsetY; y += gridSpacing) {
-        lines.push(
-          <Path
-            key={`h-${y}`}
-            d={`M ${offsetX} ${y} L ${extendedWidth + offsetX} ${y}`}
-            stroke={gridColor}
-            strokeWidth={0.5 / transform.scale}
-          />
-        );
+        path.moveTo(offsetX, y);
+        path.lineTo(extendedWidth + offsetX, y);
       }
-      return lines;
-    }, [showGrid, canvasWidth, effectiveHeight, gridColor, transform.scale]);
+
+      return path;
+    }, [showGrid, canvasWidth, effectiveHeight]);
+
+    // Memoize stroke paths (completed strokes from Zustand)
+    const strokePaths = useMemo(() => {
+      return strokes.map((stroke) => ({
+        path: pointsToSkiaPath(stroke.points),
+        color: stroke.color,
+        width: stroke.width,
+      }));
+    }, [strokes, pointsToSkiaPath]);
+
+    // Note: currentPath is now managed via useState + useAnimatedReaction
+    // for low-latency drawing (see buildCurrentPath above)
 
     return (
-      <View
-        ref={ref}
-        style={[
-          styles.container,
-          flexFill && styles.flexContainer,
-          {
-            height: flexFill ? undefined : height,
-            backgroundColor: bgColor,
-            borderColor,
-          },
-        ]}
-        onLayout={handleLayout}
-        {...panResponder.panHandlers}
-      >
-        <Svg
-          width={canvasWidth}
-          height={effectiveHeight}
-          viewBox={`${-transform.translateX / transform.scale} ${-transform.translateY / transform.scale} ${canvasWidth / transform.scale} ${effectiveHeight / transform.scale}`}
+      <GestureHandlerRootView style={flexFill ? styles.flexContainer : undefined}>
+        <View
+          ref={ref}
+          style={[
+            styles.container,
+            flexFill && styles.flexContainer,
+            {
+              height: flexFill ? undefined : height,
+              backgroundColor: bgColor,
+              borderColor,
+            },
+          ]}
+          onLayout={handleLayout}
         >
-          <G>{gridLines}</G>
-          <G>
-            {strokes.map((stroke, index) => {
-              const d = pointsToPath(stroke.points);
-              if (!d) return null;
-              return (
-                <Path
-                  key={index}
-                  d={d}
-                  stroke={stroke.color}
-                  strokeWidth={stroke.width / transform.scale}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                />
-              );
-            })}
-            {currentStroke && currentStroke.points && currentStroke.points.length > 1 && (
-              <Path
-                d={pointsToPath(currentStroke.points)}
-                stroke={currentStroke.color}
-                strokeWidth={currentStroke.width / transform.scale}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="none"
-              />
-            )}
-          </G>
-        </Svg>
+          <GestureDetector gesture={composedGesture}>
+            <Animated.View style={{ flex: 1 }}>
+              <Canvas
+                ref={canvasRef}
+                style={{ width: canvasWidth, height: effectiveHeight }}
+              >
+                {/* Apply transform group for pan/zoom */}
+                <Group
+                  transform={[
+                    { translateX: transform.translateX },
+                    { translateY: transform.translateY },
+                    { scale: safeScale },
+                  ]}
+                >
+                  {/* Grid */}
+                  {gridPath && (
+                    <Path
+                      path={gridPath}
+                      color={gridColor}
+                      style="stroke"
+                      strokeWidth={0.5 / safeScale}
+                    />
+                  )}
 
-        {/* Zoom indicator */}
-        {transform.scale !== 1 && (
-          <View style={styles.zoomIndicator}>
-            <View style={[styles.zoomBadge, { backgroundColor: isDark ? '#333' : '#EEE' }]}>
-              <Text style={[styles.zoomText, { color: isDark ? '#FFF' : '#333' }]}>
-                {Math.round(transform.scale * 100)}%
-              </Text>
+                  {/* Completed strokes */}
+                  {strokePaths.map((strokeData, index) => {
+                    if (!strokeData.path) return null;
+                    return (
+                      <Path
+                        key={index}
+                        path={strokeData.path}
+                        color={strokeData.color}
+                        style="stroke"
+                        strokeWidth={strokeData.width / safeScale}
+                        strokeCap="round"
+                        strokeJoin="round"
+                      />
+                    );
+                  })}
+
+                  {/* Current stroke being drawn */}
+                  {currentPath && currentPath.path && (
+                    <Path
+                      path={currentPath.path}
+                      color={currentPath.color}
+                      style="stroke"
+                      strokeWidth={currentPath.width / safeScale}
+                      strokeCap="round"
+                      strokeJoin="round"
+                    />
+                  )}
+                </Group>
+              </Canvas>
+            </Animated.View>
+          </GestureDetector>
+
+          {/* Zoom indicator */}
+          {transform.scale !== 1 && (
+            <View style={styles.zoomIndicator}>
+              <View style={[styles.zoomBadge, { backgroundColor: isDark ? '#333' : '#EEE' }]}>
+                <Text style={[styles.zoomText, { color: isDark ? '#FFF' : '#333' }]}>
+                  {Math.round(transform.scale * 100)}%
+                </Text>
+              </View>
             </View>
-          </View>
-        )}
-      </View>
+          )}
+        </View>
+      </GestureHandlerRootView>
     );
   }
 );
@@ -322,9 +479,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   flexContainer: {
-    flex: 1,
-  },
-  svgContainer: {
     flex: 1,
   },
   zoomIndicator: {
