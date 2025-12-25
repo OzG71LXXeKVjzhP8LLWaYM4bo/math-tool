@@ -8,7 +8,9 @@ use crate::error::{AppError, AppResult};
 use crate::models::{Question, SolutionStep};
 use crate::services::PromptLoader;
 
-const MODEL: &str = "gemini-2.0-flash";
+const GRADING_MODEL: &str = "gemini-3-flash-preview";
+
+const MODEL: &str = "gemini-3-flash-preview";
 
 /// Fix LaTeX escapes in JSON - LLMs often output \frac instead of \\frac
 fn fix_latex_escapes(json: &str) -> String {
@@ -98,6 +100,13 @@ struct GeneratedStep {
     expression: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct GradingResponse {
+    is_correct: bool,
+    #[allow(dead_code)]
+    reasoning: Option<String>,
+}
+
 pub struct GeminiClient {
     client: Client,
     prompt_loader: Arc<PromptLoader>,
@@ -117,11 +126,22 @@ impl GeminiClient {
         subject: &str,
         topic: &str,
         difficulty: i32,
+        paper_type: Option<&str>,
     ) -> AppResult<Question> {
         let mut vars = HashMap::new();
         vars.insert("subject", subject.to_string());
         vars.insert("topic", topic.to_string());
         vars.insert("difficulty", difficulty.to_string());
+        vars.insert("paper_type", paper_type.unwrap_or("paper1").to_string());
+
+        // Add paper-specific instructions
+        let paper_instructions = match paper_type {
+            Some("paper1") => "Paper 1 style: NO CALCULATOR. Use exact values only (fractions, surds, π, e). Focus on algebraic manipulation, factorization, simplification, and proofs. Include 'show that' steps. Penalize decimal approximations.",
+            Some("paper2") => "Paper 2 style: CALCULATOR ALLOWED. Use real-world context (motion, growth, economics, optimization). Include numerical solving, graph interpretation, statistics. Ask for interpretation of results and model assumptions.",
+            Some("paper3") => "Paper 3 style: HL Investigation. CALCULATOR ALLOWED. Create unfamiliar problem settings with new definitions. Require multi-topic integration and deep reasoning. Use 'explore', 'investigate', 'hence deduce' language. Focus on proof and mathematical discovery.",
+            _ => "Paper 1 style: NO CALCULATOR. Use exact values only.",
+        };
+        vars.insert("paper_instructions", paper_instructions.to_string());
 
         let prompt = self.prompt_loader.load_and_render(
             "question_generation",
@@ -233,5 +253,69 @@ impl GeminiClient {
             .to_string();
 
         Ok(latex)
+    }
+
+    pub async fn grade_answer(
+        &self,
+        question_latex: &str,
+        user_answer: &str,
+        correct_answer: &str,
+    ) -> AppResult<bool> {
+        let prompt = format!(
+            r#"You are grading a math answer. Determine if the student's answer is mathematically equivalent to the correct answer.
+
+Question: {}
+
+Student's answer: {}
+
+Correct answer: {}
+
+Consider:
+- Different but equivalent forms (e.g., 1/2 = 0.5, x^2 - 1 = (x-1)(x+1))
+- Simplified vs unsimplified forms
+- Different notation for the same value
+- Minor formatting differences in LaTeX
+
+Return ONLY a JSON object with this format:
+{{"is_correct": true/false, "reasoning": "brief explanation"}}
+
+No markdown, no code fences, just the JSON object."#,
+            question_latex, user_answer, correct_answer
+        );
+
+        let chat_req = ChatRequest::new(vec![
+            ChatMessage::system(
+                "You are a math grading assistant. Return only valid JSON with is_correct boolean and brief reasoning."
+            ),
+            ChatMessage::user(prompt),
+        ]);
+
+        let options = ChatOptions::default()
+            .with_temperature(0.1);
+
+        let response = self.client
+            .exec_chat(GRADING_MODEL, chat_req, Some(&options))
+            .await
+            .map_err(|e| AppError::ExternalService(format!("Gemini grading error: {}", e)))?;
+
+        let text = response
+            .content_text_as_str()
+            .ok_or_else(|| AppError::ExternalService("No grading response from Gemini".to_string()))?;
+
+        // Strip markdown fences and extract JSON
+        let stripped = strip_markdown_fences(text);
+        let json_text = extract_json(&stripped).unwrap_or(stripped);
+
+        // Parse the response
+        let is_correct = match serde_json::from_str::<GradingResponse>(&json_text) {
+            Ok(grading) => grading.is_correct,
+            Err(_) => {
+                // Fallback: try to find is_correct pattern in text
+                let lower = json_text.to_lowercase();
+                lower.contains("\"is_correct\": true") || lower.contains("\"is_correct\":true")
+            }
+        };
+
+        Ok(is_correct)
     }
 }

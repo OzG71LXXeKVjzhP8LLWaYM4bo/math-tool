@@ -12,6 +12,15 @@ pub struct Quiz {
     pub current_index: i32,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
+    // New fields for quiz/exam mode
+    #[sqlx(default)]
+    pub mode: Option<String>,           // 'quiz' or 'exam'
+    #[sqlx(default)]
+    pub paper_type: Option<String>,     // 'paper1', 'paper2', 'paper3'
+    #[sqlx(default)]
+    pub question_count: Option<i32>,
+    #[sqlx(default)]
+    pub time_limit: Option<i32>,        // seconds
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -30,6 +39,10 @@ pub struct QuizNextRequest {
     pub subject: String,
     pub topic: String,
     pub quiz_id: Option<Uuid>,
+    // New fields for quiz/exam mode
+    pub mode: Option<String>,
+    pub paper_type: Option<String>,
+    pub question_count: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -39,6 +52,10 @@ pub struct QuizNextResponse {
     pub quiz_id: Uuid,
     pub question_number: i32,
     pub total_questions: i32,
+    // New fields for quiz/exam mode
+    pub mode: Option<String>,
+    pub paper_type: Option<String>,
+    pub time_limit: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]

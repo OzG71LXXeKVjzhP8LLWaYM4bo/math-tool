@@ -3,13 +3,18 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type Course = 'aa' | 'ai';
+export type ThemePreference = 'system' | 'light' | 'dark';
 
 interface SettingsState {
   // Selected IB Math course
   course: Course | null;
 
+  // Theme preference
+  themePreference: ThemePreference;
+
   // Actions
   setCourse: (course: Course) => void;
+  setThemePreference: (theme: ThemePreference) => void;
   hasCourseSelected: () => boolean;
 }
 
@@ -17,8 +22,10 @@ export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => ({
       course: null,
+      themePreference: 'system',
 
       setCourse: (course: Course) => set({ course }),
+      setThemePreference: (theme: ThemePreference) => set({ themePreference: theme }),
 
       hasCourseSelected: () => get().course !== null,
     }),

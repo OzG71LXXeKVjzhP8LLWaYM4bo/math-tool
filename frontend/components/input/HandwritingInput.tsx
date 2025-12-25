@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,17 +6,24 @@ import {
   Text,
   ActivityIndicator,
   useWindowDimensions,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from 'react-native';
 import ViewShot from 'react-native-view-shot';
 import { Ionicons } from '@expo/vector-icons';
 import { DrawingCanvas } from './DrawingCanvas';
-import { CanvasToolbar } from './CanvasToolbar';
+import { MiniToolbar, ExpandedToolbar, CanvasToolbar } from './CanvasToolbar';
 import { ImageCapture } from './ImageCapture';
-import { LatexRenderer } from '@/components/latex/LatexRenderer';
 import { useOcr } from '@/hooks/use-ocr';
 import { useCanvasStore } from '@/stores/canvas-store';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type InputMode = 'draw' | 'camera';
 
@@ -24,12 +31,18 @@ interface HandwritingInputProps {
   onSubmit: (latex: string) => void;
   isLoading?: boolean;
   disabled?: boolean;
+  hideSubmitButton?: boolean;
+  onSubmitReady?: (submitFn: () => Promise<void>, canSubmit: boolean, isProcessing: boolean) => void;
+  landscapeMode?: boolean; // Use full-height canvas with collapsible toolbar
 }
 
 export function HandwritingInput({
   onSubmit,
   isLoading = false,
   disabled = false,
+  hideSubmitButton = false,
+  onSubmitReady,
+  landscapeMode = false,
 }: HandwritingInputProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -37,6 +50,7 @@ export function HandwritingInput({
 
   const [mode, setMode] = useState<InputMode>('draw');
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [toolbarExpanded, setToolbarExpanded] = useState(false);
   const viewShotRef = useRef<ViewShot>(null);
 
   const { recognizedLatex, isProcessing, error, processImage, reset } = useOcr();
@@ -47,9 +61,25 @@ export function HandwritingInput({
   const activeColor = isDark ? Colors.dark.tint : Colors.light.tint;
   const errorColor = '#DC2626';
 
-  // Calculate canvas height based on screen size
+  // Calculate canvas height based on screen size (for non-landscape mode)
   const isLandscape = width > height;
   const canvasHeight = isLandscape ? Math.min(height - 200, 400) : Math.min(height * 0.4, 350);
+
+  const toggleToolbar = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setToolbarExpanded(!toolbarExpanded);
+  };
+
+  const handleModeChange = (newMode: InputMode) => {
+    if (newMode === 'draw') {
+      setCapturedImage(null);
+      reset();
+    } else {
+      clearCanvas();
+      reset();
+    }
+    setMode(newMode);
+  };
 
   const handleSubmit = async () => {
     if (isProcessing || isLoading || disabled) return;
@@ -105,6 +135,77 @@ export function HandwritingInput({
 
   const canSubmit = mode === 'draw' ? strokes.length > 0 : !!capturedImage;
 
+  // Notify parent about submit state
+  useEffect(() => {
+    if (onSubmitReady) {
+      onSubmitReady(handleSubmit, canSubmit, isProcessing);
+    }
+  }, [canSubmit, isProcessing, onSubmitReady]);
+
+  // Landscape mode with collapsible toolbar
+  if (landscapeMode) {
+    return (
+      <View style={styles.landscapeContainer}>
+        {/* Mini Toolbar - always visible */}
+        <MiniToolbar
+          expanded={toolbarExpanded}
+          onToggleExpand={toggleToolbar}
+          mode={mode}
+          onModeChange={handleModeChange}
+        />
+
+        {/* Expanded Toolbar - slides down */}
+        {toolbarExpanded && (
+          <ExpandedToolbar onClose={() => setToolbarExpanded(false)} />
+        )}
+
+        {/* Canvas Area - fills remaining space */}
+        {mode === 'draw' ? (
+          <View style={styles.landscapeCanvasWrapper}>
+            <ViewShot
+              ref={viewShotRef}
+              options={{ format: 'png', quality: 0.9, result: 'tmpfile' }}
+              style={styles.viewShot}
+            >
+              <DrawingCanvas showGrid={true} flexFill={true} />
+            </ViewShot>
+          </View>
+        ) : (
+          <View style={styles.landscapeCameraWrapper}>
+            <ImageCapture
+              onImageCaptured={handleImageCaptured}
+              capturedImage={capturedImage}
+              onClear={() => {
+                setCapturedImage(null);
+                reset();
+              }}
+              disabled={isProcessing}
+            />
+          </View>
+        )}
+
+        {/* Error Display */}
+        {error && (
+          <View style={[styles.errorContainer, { backgroundColor: `${errorColor}15` }]}>
+            <Ionicons name="warning" size={18} color={errorColor} />
+            <Text style={[styles.errorText, { color: errorColor }]}>{error}</Text>
+          </View>
+        )}
+
+        {/* Processing indicator for camera mode */}
+        {mode === 'camera' && isProcessing && (
+          <View style={styles.processingOverlay}>
+            <ActivityIndicator color={activeColor} size="large" />
+            <Text style={[styles.processingText, { color: subtextColor }]}>
+              Recognizing handwriting...
+            </Text>
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  // Portrait/default mode with traditional layout
   return (
     <View style={styles.container}>
       {/* Mode Selector */}
@@ -114,11 +215,7 @@ export function HandwritingInput({
             styles.modeButton,
             mode === 'draw' && { backgroundColor: `${activeColor}20` },
           ]}
-          onPress={() => {
-            setMode('draw');
-            setCapturedImage(null);
-            reset();
-          }}
+          onPress={() => handleModeChange('draw')}
         >
           <Ionicons
             name="pencil"
@@ -140,11 +237,7 @@ export function HandwritingInput({
             styles.modeButton,
             mode === 'camera' && { backgroundColor: `${activeColor}20` },
           ]}
-          onPress={() => {
-            setMode('camera');
-            clearCanvas();
-            reset();
-          }}
+          onPress={() => handleModeChange('camera')}
         >
           <Ionicons
             name="camera"
@@ -194,7 +287,7 @@ export function HandwritingInput({
       )}
 
       {/* Submit Button */}
-      {mode === 'draw' && (
+      {mode === 'draw' && !hideSubmitButton && (
         <TouchableOpacity
           style={[
             styles.submitButton,
@@ -293,5 +386,32 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     flex: 1,
+  },
+
+  // Landscape mode styles
+  landscapeContainer: {
+    flex: 1,
+  },
+  landscapeCanvasWrapper: {
+    flex: 1,
+    marginTop: 8,
+  },
+  viewShot: {
+    flex: 1,
+  },
+  landscapeCameraWrapper: {
+    flex: 1,
+    marginTop: 8,
+  },
+  processingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    gap: 12,
   },
 });

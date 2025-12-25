@@ -25,7 +25,7 @@ pub async fn generate_question(
 
         for _ in 0..count {
             match client
-                .generate_question(&request.subject, &request.topic, difficulty)
+                .generate_question(&request.subject, &request.topic, difficulty, None)
                 .await
             {
                 Ok(question) => {

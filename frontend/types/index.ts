@@ -1,5 +1,46 @@
 // API Types
 
+// Session & Paper Types
+export type SessionMode = 'quiz' | 'exam';
+export type PaperType = 'paper1' | 'paper2' | 'paper3';
+
+export interface QuizConfig {
+  mode: SessionMode;
+  paperType: PaperType;
+  questionCount: number;
+}
+
+// Paper type metadata
+export const PAPER_INFO: Record<PaperType, {
+  name: string;
+  duration: string;
+  calculator: boolean;
+  description: string;
+  timePerQuestion: number; // minutes
+}> = {
+  paper1: {
+    name: 'Paper 1',
+    duration: '2 hours',
+    calculator: false,
+    description: 'Pure math, algebraic manipulation, proofs',
+    timePerQuestion: 12,
+  },
+  paper2: {
+    name: 'Paper 2',
+    duration: '2 hours',
+    calculator: true,
+    description: 'Real-world modelling, interpretation, statistics',
+    timePerQuestion: 12,
+  },
+  paper3: {
+    name: 'Paper 3',
+    duration: '1 hour',
+    calculator: true,
+    description: 'HL investigation, deep reasoning, unfamiliar problems',
+    timePerQuestion: 25,
+  },
+};
+
 export interface SolutionStep {
   step_number: number;
   description: string;
@@ -33,6 +74,11 @@ export interface Quiz {
   current_index: number;
   started_at?: string;
   completed_at?: string;
+  // New fields for quiz/exam mode
+  mode?: SessionMode;
+  paper_type?: PaperType;
+  question_count?: number;
+  time_limit?: number; // seconds
 }
 
 export interface QuizAnswer {
@@ -69,6 +115,8 @@ export interface QuizHistoryItem {
   total_questions: number;
   correct_answers: number;
   started_at?: string;
+  mode?: SessionMode;
+  paper_type?: PaperType;
 }
 
 // API Request/Response Types
@@ -84,20 +132,6 @@ export interface OcrResponse {
   error?: string;
 }
 
-export interface SolveRequest {
-  expression_latex: string;
-  subject?: string;
-  solve_for?: string;
-  operation?: 'solve' | 'differentiate' | 'integrate';
-}
-
-export interface SolveResponse {
-  success: boolean;
-  answer_latex: string;
-  steps: SolutionStep[];
-  error?: string;
-}
-
 export interface GenerateQuestionRequest {
   subject: string;
   topic: string;
@@ -109,10 +143,36 @@ export interface GenerateQuestionResponse {
   questions: Question[];
 }
 
-export interface QuizNextRequest {
+// Request to create a new quiz
+export interface CreateQuizRequest {
   subject: string;
   topic: string;
-  quiz_id?: string;
+  mode?: SessionMode;
+  paper_type?: PaperType;
+  question_count?: number;
+}
+
+// Response from quiz creation or retrieval
+export interface QuizResponse {
+  id: string;
+  subject: string;
+  topic: string;
+  current_index: number;
+  question_count: number;
+  mode?: SessionMode;
+  paper_type?: PaperType;
+  time_limit?: number;
+  questions: QuestionWithAnswer[];
+}
+
+export interface QuestionWithAnswer {
+  question: Question;
+  user_answer?: string;
+  is_correct?: boolean;
+}
+
+export interface QuizNextRequest {
+  quiz_id: string;
 }
 
 export interface QuizNextResponse {
@@ -121,6 +181,10 @@ export interface QuizNextResponse {
   quiz_id: string;
   question_number: number;
   total_questions: number;
+  // New fields for quiz/exam mode
+  mode?: SessionMode;
+  paper_type?: PaperType;
+  time_limit?: number; // seconds (for exam mode)
 }
 
 export interface QuizSubmitRequest {

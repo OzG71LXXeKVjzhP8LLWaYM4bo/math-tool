@@ -2,9 +2,12 @@ Generate an IB Mathematics Higher Level exam-style question.
 
 Subject: {{subject}}
 Topic: {{topic}}
+Paper Type: {{paper_type}}
+
+{{paper_instructions}}
 
 Requirements:
-- Match IB HL exam difficulty and style
+- Match IB HL exam difficulty and style for the specified paper type
 - Create a standalone question (no multi-part)
 - Use proper LaTeX notation for all mathematical expressions
 - Include specific numerical values that lead to clean answers

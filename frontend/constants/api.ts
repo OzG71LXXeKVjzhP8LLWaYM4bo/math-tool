@@ -10,13 +10,11 @@ export const ENDPOINTS = {
   // OCR
   ocr: '/ocr',
 
-  // Solver
-  solve: '/solve',
-
   // Question Generation
   generateQuestion: '/generate-question',
 
   // Quiz
+  quiz: '/quiz',           // POST to create, GET with /:id to fetch
   quizNext: '/quiz/next',
   quizSubmit: '/quiz/submit',
   quizHistory: '/quiz/history',

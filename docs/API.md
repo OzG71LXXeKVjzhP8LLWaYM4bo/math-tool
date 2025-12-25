@@ -57,60 +57,6 @@ POST /api/ocr
 
 ---
 
-### Solve - Math Expression Solver
-
-Solve a mathematical expression and return step-by-step solution.
-
-```
-POST /api/solve
-```
-
-**Request Body:**
-```json
-{
-  "expression_latex": "x^2 + 2x - 3 = 0",
-  "subject": "math",
-  "solve_for": "x",
-  "operation": "solve"
-}
-```
-
-**Parameters:**
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `expression_latex` | string | Yes | LaTeX expression to solve |
-| `subject` | string | No | Subject context (math/physics/chemistry) |
-| `solve_for` | string | No | Variable to solve for |
-| `operation` | string | No | Operation type: `solve`, `differentiate`, `integrate` |
-
-**Response:**
-```json
-{
-  "success": true,
-  "answer_latex": "x = 1 \\text{ or } x = -3",
-  "steps": [
-    {
-      "step_number": 1,
-      "description": "Factor the quadratic",
-      "expression_latex": "(x - 1)(x + 3) = 0"
-    },
-    {
-      "step_number": 2,
-      "description": "Set each factor to zero",
-      "expression_latex": "x - 1 = 0 \\text{ or } x + 3 = 0"
-    },
-    {
-      "step_number": 3,
-      "description": "Solve for x",
-      "expression_latex": "x = 1 \\text{ or } x = -3"
-    }
-  ],
-  "error": null
-}
-```
-
----
-
 ### Generate Question
 
 Generate an IB HL-style question using AI.
@@ -166,25 +112,84 @@ POST /api/generate-question
 
 ---
 
-### Quiz - Get Next Question
+### Quiz - Create New Quiz
 
-Get the next question in a quiz session.
+Create a new quiz session and get the first question.
 
 ```
-GET /api/quiz/next
+POST /api/quiz
+```
+
+**Request Body:**
+```json
+{
+  "subject": "math",
+  "topic": "Calculus",
+  "mode": "quiz",
+  "paper_type": "paper1",
+  "question_count": 10
+}
+```
+
+**Parameters:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `subject` | string | Yes | Subject: `math`, `physics`, `chemistry` |
+| `topic` | string | Yes | Topic within the subject |
+| `mode` | string | No | `quiz` (default) or `exam` |
+| `paper_type` | string | No | `paper1`, `paper2`, or `paper3` |
+| `question_count` | integer | No | Number of questions (default: 10) |
+
+**Response:**
+```json
+{
+  "id": "660e8400-e29b-41d4-a716-446655440001",
+  "subject": "math",
+  "topic": "Calculus",
+  "current_index": 0,
+  "question_count": 10,
+  "mode": "quiz",
+  "paper_type": "paper1",
+  "questions": [
+    {
+      "question": {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "question_latex": "Find \\frac{d}{dx}(x^3)",
+        ...
+      },
+      "user_answer": null,
+      "is_correct": null
+    }
+  ]
+}
+```
+
+---
+
+### Quiz - Get Existing Quiz
+
+Resume an existing quiz session.
+
+```
+GET /api/quiz/:id
+```
+
+**Response:** Same as POST /api/quiz
+
+---
+
+### Quiz - Get Next Question
+
+Get the next question for an existing quiz.
+
+```
+GET /api/quiz/next?quiz_id=660e8400-e29b-41d4-a716-446655440001
 ```
 
 **Query Parameters:**
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `subject` | string | Yes | Subject: `math`, `physics`, `chemistry` |
-| `topic` | string | Yes | Topic within the subject |
-| `session_id` | string | No | Existing session ID to continue |
-
-**Example:**
-```
-GET /api/quiz/next?subject=math&topic=Calculus
-```
+| `quiz_id` | string | Yes | Existing quiz session ID |
 
 **Response:**
 ```json
@@ -199,9 +204,11 @@ GET /api/quiz/next?subject=math&topic=Calculus
     "solution_steps": [...],
     "source": "generated"
   },
-  "session_id": "660e8400-e29b-41d4-a716-446655440001",
-  "question_number": 1,
-  "total_questions": 10
+  "quiz_id": "660e8400-e29b-41d4-a716-446655440001",
+  "question_number": 2,
+  "total_questions": 10,
+  "mode": "quiz",
+  "paper_type": "paper1"
 }
 ```
 
@@ -342,56 +349,12 @@ All endpoints return errors in a consistent format:
 
 ---
 
-## Python Service API (Internal)
+## Gemini API Integration
 
-These endpoints are called by the Rust backend, not directly by clients.
+All AI features (OCR, question generation, answer grading) use Google's Gemini API:
 
-### Pix2Tex OCR
+- **OCR**: Gemini Vision analyzes handwritten images and extracts LaTeX
+- **Question Generation**: Gemini generates IB HL-style questions with solutions
+- **Answer Grading**: Gemini compares user answers against correct answers
 
-```
-POST http://localhost:8000/pix2tex
-```
-
-**Request:**
-```json
-{
-  "image_base64": "base64_encoded_image"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "latex": "recognized_latex",
-  "confidence": 0.95,
-  "error": null
-}
-```
-
-### Math Solver
-
-```
-POST http://localhost:8000/solve
-```
-
-**Request:**
-```json
-{
-  "expression_latex": "x^2 - 4 = 0",
-  "subject": "math",
-  "solve_for": "x",
-  "show_steps": true,
-  "operation": "solve"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "answer_latex": "x = \\pm 2",
-  "steps": [...],
-  "error": null
-}
-```
+The Gemini API key is configured via the `GEMINI_API_KEY` environment variable.

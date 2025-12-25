@@ -71,11 +71,11 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         // Health check
         .route("/health", get(routes::health))
-        // Solve routes
-        .route("/api/solve", post(routes::solve::solve_expression))
         // Question generation
         .route("/api/generate-question", post(routes::question::generate_question))
         // Quiz routes
+        .route("/api/quiz", post(routes::quiz::create_new_quiz))
+        .route("/api/quiz/:id", get(routes::quiz::get_existing_quiz))
         .route("/api/quiz/next", get(routes::quiz::get_next_question))
         .route("/api/quiz/submit", post(routes::quiz::submit_answer))
         .route("/api/quiz/history", get(routes::quiz::get_history))

@@ -1,8 +1,22 @@
 use axum::{extract::State, Json};
+use serde::{Deserialize, Serialize};
 
 use crate::error::AppResult;
-use crate::services::{GeminiClient, OcrRequest, OcrResponse};
+use crate::services::GeminiClient;
 use crate::AppState;
+
+#[derive(Debug, Deserialize)]
+pub struct OcrRequest {
+    pub image_base64: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OcrResponse {
+    pub success: bool,
+    pub latex: Option<String>,
+    pub confidence: f32,
+    pub error: Option<String>,
+}
 
 pub async fn ocr_image(
     State(state): State<AppState>,

@@ -2,11 +2,10 @@ import { API_BASE_URL, ENDPOINTS } from '@/constants/api';
 import type {
   OcrRequest,
   OcrResponse,
-  SolveRequest,
-  SolveResponse,
   GenerateQuestionRequest,
   GenerateQuestionResponse,
-  QuizNextRequest,
+  CreateQuizRequest,
+  QuizResponse,
   QuizNextResponse,
   QuizSubmitRequest,
   QuizSubmitResponse,
@@ -57,14 +56,6 @@ class ApiService {
     });
   }
 
-  // Solve - Solve mathematical expression
-  async solve(request: SolveRequest): Promise<SolveResponse> {
-    return this.request<SolveResponse>(ENDPOINTS.solve, {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  }
-
   // Generate questions
   async generateQuestion(request: GenerateQuestionRequest): Promise<GenerateQuestionResponse> {
     return this.request<GenerateQuestionResponse>(ENDPOINTS.generateQuestion, {
@@ -73,14 +64,22 @@ class ApiService {
     });
   }
 
-  // Quiz - Get next question
-  async getNextQuestion(request: QuizNextRequest): Promise<QuizNextResponse> {
-    const params = new URLSearchParams({
-      subject: request.subject,
-      topic: request.topic,
-      ...(request.quiz_id && { quiz_id: request.quiz_id }),
+  // Quiz - Create a new quiz
+  async createQuiz(request: CreateQuizRequest): Promise<QuizResponse> {
+    return this.request<QuizResponse>(ENDPOINTS.quiz, {
+      method: 'POST',
+      body: JSON.stringify(request),
     });
+  }
 
+  // Quiz - Get an existing quiz (for resuming)
+  async getQuiz(quizId: string): Promise<QuizResponse> {
+    return this.request<QuizResponse>(`${ENDPOINTS.quiz}/${quizId}`);
+  }
+
+  // Quiz - Get next question for a quiz
+  async getNextQuestion(quizId: string): Promise<QuizNextResponse> {
+    const params = new URLSearchParams({ quiz_id: quizId });
     return this.request<QuizNextResponse>(`${ENDPOINTS.quizNext}?${params}`);
   }
 

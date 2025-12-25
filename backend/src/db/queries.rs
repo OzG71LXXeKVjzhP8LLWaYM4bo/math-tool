@@ -95,17 +95,25 @@ pub async fn create_quiz(
     subject: &str,
     topic: &str,
     question_ids: &[Uuid],
+    mode: Option<&str>,
+    paper_type: Option<&str>,
+    question_count: Option<i32>,
+    time_limit: Option<i32>,
 ) -> Result<Quiz, sqlx::Error> {
     sqlx::query_as::<_, Quiz>(
         r#"
-        INSERT INTO quizzes (subject, topic, question_ids)
-        VALUES ($1, $2, $3)
+        INSERT INTO quizzes (subject, topic, question_ids, mode, paper_type, question_count, time_limit)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
         "#,
     )
     .bind(subject)
     .bind(topic)
     .bind(question_ids)
+    .bind(mode)
+    .bind(paper_type)
+    .bind(question_count)
+    .bind(time_limit)
     .fetch_one(pool)
     .await
 }
@@ -178,6 +186,8 @@ pub struct QuizWithStats {
     pub total_questions: i64,
     pub correct_answers: i64,
     pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub mode: Option<String>,
+    pub paper_type: Option<String>,
 }
 
 pub async fn get_quiz_history(
@@ -192,10 +202,12 @@ pub async fn get_quiz_history(
             q.topic,
             COALESCE(array_length(q.question_ids, 1), 0)::bigint as total_questions,
             COALESCE(SUM(CASE WHEN qa.is_correct THEN 1 ELSE 0 END), 0)::bigint as correct_answers,
-            q.started_at
+            q.started_at,
+            q.mode,
+            q.paper_type
         FROM quizzes q
         LEFT JOIN quiz_answers qa ON qa.quiz_id = q.id
-        GROUP BY q.id, q.subject, q.topic, q.question_ids, q.started_at
+        GROUP BY q.id, q.subject, q.topic, q.question_ids, q.started_at, q.mode, q.paper_type
         HAVING COALESCE(array_length(q.question_ids, 1), 0) > 0
         ORDER BY q.started_at DESC
         LIMIT $1

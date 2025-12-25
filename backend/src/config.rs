@@ -6,7 +6,6 @@ pub struct Config {
     pub host: String,
     pub port: u16,
     pub database_url: String,
-    pub python_service_url: String,
     pub gemini_api_key: String,
     pub prompts_dir: String,
 }
@@ -20,8 +19,6 @@ impl Config {
                 .parse()?,
             database_url: env::var("DATABASE_URL")
                 .unwrap_or_else(|_| "postgres://localhost/ib_quiz".to_string()),
-            python_service_url: env::var("PYTHON_SERVICE_URL")
-                .unwrap_or_else(|_| "http://localhost:8000".to_string()),
             gemini_api_key: env::var("GEMINI_API_KEY").unwrap_or_default(),
             prompts_dir: env::var("PROMPTS_DIR").unwrap_or_else(|_| "./prompts".to_string()),
         })

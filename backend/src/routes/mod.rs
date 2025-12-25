@@ -1,4 +1,3 @@
-pub mod solve;
 pub mod question;
 pub mod quiz;
 pub mod progress;

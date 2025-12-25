@@ -13,7 +13,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        tabBarActiveTintColor: Colors[colorScheme].tint,
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarStyle: {
@@ -56,16 +56,18 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="settings-outline" size={28} color={color} />
+          ),
+        }}
+      />
       {/* Hide the explore tab */}
       <Tabs.Screen
         name="explore"
-        options={{
-          href: null,
-        }}
-      />
-      {/* Hide the dynamic quiz route from tabs */}
-      <Tabs.Screen
-        name="quiz/[id]"
         options={{
           href: null,
         }}

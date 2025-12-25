@@ -2,7 +2,7 @@
 
 ## System Design
 
-The IB Quiz App follows a microservices architecture with three main components:
+The IB Quiz App follows a two-tier architecture with a React Native frontend and a Rust backend:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -11,11 +11,11 @@ The IB Quiz App follows a microservices architecture with three main components:
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │              Expo / React Native App                     │   │
 │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐       │   │
-│  │  │  Home   │ │  Quiz   │ │  Write  │ │Progress │       │   │
+│  │  │  Home   │ │  Quiz   │ │ History │ │Progress │       │   │
 │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘       │   │
 │  │                                                          │   │
 │  │  ┌─────────────────────────────────────────────────┐    │   │
-│  │  │  Zustand Stores (quiz, canvas, progress)        │    │   │
+│  │  │  Zustand Stores (quiz, canvas, settings)        │    │   │
 │  │  └─────────────────────────────────────────────────┘    │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
@@ -28,27 +28,25 @@ The IB Quiz App follows a microservices architecture with three main components:
 │  │              Rust + Axum Backend                         │   │
 │  │                                                          │   │
 │  │  Routes:                    Services:                    │   │
-│  │  • /api/ocr                 • Python Client              │   │
-│  │  • /api/solve               • Gemini Client              │   │
-│  │  • /api/generate-question   • Adaptive Difficulty        │   │
+│  │  • /api/ocr                 • Gemini Client (OCR, Gen)   │   │
+│  │  • /api/generate-question   • Prompt Loader              │   │
 │  │  • /api/quiz/*              • Database Queries           │   │
 │  │  • /api/progress                                         │   │
 │  └─────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
                     │                       │
-                    ▼ HTTP                  ▼ SQL
-┌───────────────────────────┐   ┌─────────────────────────────────┐
-│   PROCESSING LAYER        │   │       DATA LAYER                │
-├───────────────────────────┤   ├─────────────────────────────────┤
-│  Python FastAPI Service   │   │   Neon PostgreSQL               │
-│                           │   │                                 │
-│  • Pix2Tex (OCR)          │   │   Tables:                       │
-│  • SymPy (Math Solver)    │   │   • questions                   │
-│                           │   │   • quiz_sessions               │
-│  Endpoints:               │   │   • quiz_answers                │
-│  • POST /pix2tex          │   │   • progress                    │
-│  • POST /solve            │   │                                 │
-└───────────────────────────┘   └─────────────────────────────────┘
+                    ▼ HTTPS                 ▼ SQL
+┌───────────────────────────────┐   ┌─────────────────────────────────┐
+│   EXTERNAL SERVICES           │   │       DATA LAYER                │
+├───────────────────────────────┤   ├─────────────────────────────────┤
+│  Google Gemini API            │   │   PostgreSQL (Neon)             │
+│                               │   │                                 │
+│  • Vision (OCR)               │   │   Tables:                       │
+│  • Text Generation            │   │   • questions                   │
+│  • Answer Grading             │   │   • quiz_sessions               │
+│                               │   │   • quiz_answers                │
+│                               │   │   • progress                    │
+└───────────────────────────────┘   └─────────────────────────────────┘
 ```
 
 ## Component Details
@@ -69,18 +67,25 @@ The IB Quiz App follows a microservices architecture with three main components:
 | Screen | Purpose |
 |--------|---------|
 | `index.tsx` | Dashboard with stats and quick actions |
-| `write.tsx` | Samsung Notes-style drawing canvas |
-| `quiz.tsx` | Topic selection and adaptive quiz |
-| `upload.tsx` | Camera/gallery image upload for OCR |
+| `quiz/index.tsx` | Topic selection and quiz configuration |
+| `quiz/[id].tsx` | Active quiz with drawing canvas |
+| `history.tsx` | Quiz history and resume |
 | `progress.tsx` | Progress tracking with mastery levels |
+| `settings.tsx` | App settings |
 
 **State Management:**
 ```
 stores/
 ├── canvas-store.ts    # Drawing state (strokes, tools, undo/redo)
 ├── quiz-store.ts      # Quiz session, questions, answers
-└── progress-store.ts  # User progress data
+└── settings-store.ts  # User preferences
 ```
+
+**Drawing Canvas Features:**
+- Two-finger pan and pinch-to-zoom
+- S Pen button detection for eraser mode
+- Undo/redo with stroke history
+- Export to PNG for OCR
 
 ### 2. Backend (Rust + Axum)
 
@@ -90,7 +95,7 @@ stores/
 - Rust 2021 Edition
 - Axum 0.7 (web framework)
 - SQLx 0.8 (database)
-- Reqwest (HTTP client)
+- Reqwest (HTTP client for Gemini API)
 - Tokio (async runtime)
 
 **Module Structure:**
@@ -100,15 +105,13 @@ src/
 ├── config.rs         # Environment configuration
 ├── error.rs          # Error types and handling
 ├── routes/
-│   ├── ocr.rs        # Image → LaTeX (proxies to Python)
-│   ├── solve.rs      # Expression solving (proxies to Python)
+│   ├── ocr.rs        # Image → LaTeX (Gemini Vision)
 │   ├── question.rs   # AI question generation
 │   ├── quiz.rs       # Quiz session management
 │   └── progress.rs   # Progress tracking
 ├── services/
-│   ├── python_client.rs  # HTTP client for Python service
-│   ├── gemini.rs         # Google Gemini API integration
-│   └── adaptive.rs       # Adaptive difficulty algorithm
+│   ├── gemini.rs     # Google Gemini API client
+│   └── prompt_loader.rs  # Load prompts from files
 ├── models/
 │   ├── question.rs   # Question data structures
 │   ├── quiz.rs       # Quiz session structures
@@ -116,28 +119,6 @@ src/
 └── db/
     ├── mod.rs        # Database connection pool
     └── queries.rs    # SQL queries
-```
-
-### 3. Python Microservice (FastAPI)
-
-**Location:** `/python-service`
-
-**Key Technologies:**
-- Python 3.11+
-- UV (package manager)
-- FastAPI (web framework)
-- Pix2Tex (OCR)
-- SymPy (math solver)
-
-**Module Structure:**
-```
-app/
-├── routes/
-│   ├── ocr.py       # POST /pix2tex - Image to LaTeX
-│   └── solve.py     # POST /solve - Math solving
-└── services/
-    ├── ocr_service.py      # Pix2Tex integration
-    └── solver_service.py   # SymPy solver with steps
 ```
 
 ## Data Flow
@@ -157,10 +138,10 @@ Export canvas as PNG (base64)
 POST /api/ocr { image_base64 }
         │
         ▼
-Rust backend proxies to Python
+Rust backend calls Gemini Vision API
         │
         ▼
-Pix2Tex model recognizes LaTeX
+Gemini recognizes handwriting → LaTeX
         │
         ▼
 Return { latex: "x^2 + 2x - 3 = 0" }
@@ -169,31 +150,28 @@ Return { latex: "x^2 + 2x - 3 = 0" }
 ### 2. Quiz Flow
 
 ```
-User selects topic
+User selects topic & configures quiz
         │
         ▼
-GET /api/quiz/next?subject=math&topic=Calculus
+POST /api/quiz { subject, topic, mode, paper_type }
         │
         ▼
-Rust backend checks recent answers
+Rust backend creates quiz session
         │
         ▼
-Calculate adaptive difficulty (1-5)
+Generate first question via Gemini
         │
         ▼
-Fetch/generate question at difficulty
+Return quiz with first question
         │
         ▼
-Return question to user
+User draws answer
         │
         ▼
-User submits answer
+POST /api/quiz/submit { quiz_id, answer_latex }
         │
         ▼
-POST /api/quiz/submit { answer_latex }
-        │
-        ▼
-Verify answer correctness
+Gemini grades answer
         │
         ▼
 Update progress in database
@@ -202,25 +180,25 @@ Update progress in database
 Return { is_correct, solution, next_difficulty }
 ```
 
-### 3. Question Generation Flow
+### 3. Resume Quiz Flow
 
 ```
-POST /api/generate-question { subject, topic, difficulty }
+User views quiz history
         │
         ▼
-Build Gemini prompt with IB HL requirements
+GET /api/quiz/history
         │
         ▼
-Call Gemini API
+User selects incomplete quiz
         │
         ▼
-Parse JSON response (question, answer, steps)
+GET /api/quiz/:id
         │
         ▼
-Store in database
+Return quiz with all questions and answers
         │
         ▼
-Return Question object
+Resume at first unanswered question
 ```
 
 ## Database Schema
@@ -241,6 +219,9 @@ quiz_sessions
 ├── subject (TEXT)
 ├── topic (TEXT)
 ├── current_index (INT)
+├── question_count (INT)
+├── mode (TEXT) -- 'quiz' or 'exam'
+├── paper_type (TEXT) -- 'paper1', 'paper2', 'paper3'
 ├── started_at (TIMESTAMPTZ)
 └── completed_at (TIMESTAMPTZ)
 
@@ -263,26 +244,6 @@ progress
 ├── current_streak (INT)
 ├── mastery_level (INT 0-100)
 └── last_activity (TIMESTAMPTZ)
-```
-
-## Adaptive Difficulty Algorithm
-
-The system uses a simple but effective algorithm:
-
-```rust
-fn calculate_next_difficulty(
-    current: i32,
-    recent_answers: &[Answer],  // Last 5 answers
-) -> i32 {
-    let accuracy = correct_count / total_count;
-
-    if accuracy >= 0.8 {
-        return (current + 1).min(5);  // Increase
-    } else if accuracy <= 0.4 {
-        return (current - 1).max(1);  // Decrease
-    }
-    current  // Stay same
-}
 ```
 
 ## Security Considerations

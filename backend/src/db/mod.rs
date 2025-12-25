@@ -83,6 +83,12 @@ impl Database {
                 -- Progress
                 current_index INTEGER DEFAULT 0,
 
+                -- Quiz/Exam mode settings
+                mode TEXT,                  -- 'quiz' or 'exam'
+                paper_type TEXT,            -- 'paper1', 'paper2', 'paper3'
+                question_count INTEGER,     -- target number of questions
+                time_limit INTEGER,         -- seconds (for exam mode)
+
                 -- Timestamps
                 started_at TIMESTAMPTZ DEFAULT NOW(),
                 completed_at TIMESTAMPTZ

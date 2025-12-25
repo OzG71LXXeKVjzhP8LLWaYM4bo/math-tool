@@ -20,6 +20,7 @@ interface CanvasState {
   currentColor: string;
   strokeWidth: number;
   tool: 'pen' | 'eraser';
+  resetTransform?: () => void;
 
   startStroke: (point: Point) => void;
   addPoint: (point: Point) => void;
